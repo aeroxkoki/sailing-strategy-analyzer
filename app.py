@@ -310,7 +310,223 @@ elif page == 'データ管理':
                                 # 基本統計情報
                                 stats_cols = st.columns(3)
                                 with stats_cols[0]:
-                                    st.metric("データポイント数", f"{len(df):,}")
+                                    # ヒストグラム
+                                    fig = px.histogram(
+                                        speed_data,
+                                        title="速度分布",
+                                        labels={'value': '速度 (ノット)', 'count': '頻度'},
+                                        nbins=20
+                                    )
+                                    st.plotly_chart(fig, use_container_width=True)
+                            
+                            elif summary_type == '詳細分析':
+                                # 詳細分析表示
+                                st.subheader(f"{summary_boat} の詳細分析")
+                                
+                                # タブで情報を整理
+                                detail_tabs = st.tabs(['速度分析', 'タック分析', 'VMG分析'])
+                                
+                                with detail_tabs[0]:
+                                    if 'speed_segments' in summary:
+                                        segments = summary['speed_segments']
+                                        
+                                        # セグメント別の速度表
+                                        st.subheader('セグメント別速度分析')
+                                        segment_data = []
+                                        for i, seg in enumerate(segments):
+                                            segment_data.append({
+                                                'セグメント': f"Seg {i+1}",
+                                                '平均速度 (ノット)': f"{seg['avg_speed']:.1f}",
+                                                '最高速度 (ノット)': f"{seg['max_speed']:.1f}",
+                                                '持続時間 (秒)': f"{seg['duration']:.0f}"
+                                            })
+                                        
+                                        st.table(pd.DataFrame(segment_data))
+                                        
+                                        # 速度トレンドグラフ
+                                        fig = go.Figure()
+                                        
+                                        boat_data = st.session_state.boats_data[summary_boat]
+                                        if 'timestamp' in boat_data.columns and 'speed' in boat_data.columns:
+                                            # 時間を分単位に変換
+                                            times = [(t - boat_data['timestamp'].iloc[0]).total_seconds() / 60 
+                                                    for t in boat_data['timestamp']]
+                                            
+                                            # 速度をノットに変換
+                                            speeds = boat_data['speed'] * 1.94384
+                                            
+                                            fig.add_trace(go.Scatter(
+                                                x=times,
+                                                y=speeds,
+                                                mode='lines',
+                                                name='速度'
+                                            ))
+                                            
+                                            fig.update_layout(
+                                                title='速度トレンド',
+                                                xaxis_title='時間 (分)',
+                                                yaxis_title='速度 (ノット)'
+                                            )
+                                            
+                                            st.plotly_chart(fig, use_container_width=True)
+                                    else:
+                                        st.info('速度セグメント分析データはありません。')
+                                
+                                with detail_tabs[1]:
+                                    if 'tack_analysis' in summary:
+                                        tack_analysis = summary['tack_analysis']
+                                        
+                                        # タック分析メトリクス
+                                        metrics_cols = st.columns(3)
+                                        with metrics_cols[0]:
+                                            st.metric("タック回数", summary.get('tack_count', 0))
+                                        with metrics_cols[1]:
+                                            st.metric("平均速度損失", f"{tack_analysis.get('avg_loss_knots', 0):.2f} ノット")
+                                        with metrics_cols[2]:
+                                            st.metric("平均回復時間", f"{tack_analysis.get('avg_recovery_time', 0):.1f} 秒")
+                                        
+                                        # タック詳細テーブル
+                                        if 'tacks' in tack_analysis:
+                                            tack_data = []
+                                            for i, tack in enumerate(tack_analysis['tacks']):
+                                                tack_data.append({
+                                                    'タック#': i+1,
+                                                    '時間': tack.get('time', ''),
+                                                    '前コース': f"{tack.get('pre_course', 0):.0f}°",
+                                                    '後コース': f"{tack.get('post_course', 0):.0f}°",
+                                                    '損失 (ノット)': f"{tack.get('speed_loss', 0):.2f}",
+                                                    '回復時間 (秒)': f"{tack.get('recovery_time', 0):.1f}"
+                                                })
+                                            
+                                            st.subheader('タック詳細')
+                                            st.table(pd.DataFrame(tack_data))
+                                    else:
+                                        st.info('タック分析データはありません。')
+                                
+                                with detail_tabs[2]:
+                                    if 'vmg' in summary:
+                                        vmg = summary['vmg']
+                                        
+                                        # VMGメトリクス
+                                        metrics_cols = st.columns(3)
+                                        with metrics_cols[0]:
+                                            st.metric("平均VMG", f"{vmg.get('avg_vmg', 0):.2f}")
+                                        with metrics_cols[1]:
+                                            st.metric("最大VMG", f"{vmg.get('max_vmg', 0):.2f}")
+                                        with metrics_cols[2]:
+                                            st.metric("VMG効率", f"{vmg.get('vmg_efficiency', 0):.1f}%")
+                                        
+                                        # VMGプロット
+                                        if 'vmg_data' in vmg:
+                                            fig = px.scatter(
+                                                vmg['vmg_data'],
+                                                x='wind_angle',
+                                                y='vmg',
+                                                color='speed',
+                                                title='風向角度とVMGの関係',
+                                                labels={
+                                                    'wind_angle': '風向角度 (度)',
+                                                    'vmg': 'VMG',
+                                                    'speed': '速度 (ノット)'
+                                                }
+                                            )
+                                            st.plotly_chart(fig, use_container_width=True)
+                                    else:
+                                        st.info('VMG分析データはありません。')
+                            
+                            elif summary_type == '総合レポート':
+                                # 総合レポートを表示
+                                st.subheader(f"{summary_boat} の総合パフォーマンスレポート")
+                                
+                                # 全体評価
+                                st.subheader('📊 全体評価')
+                                
+                                if 'overall_rating' in summary:
+                                    rating = summary['overall_rating']
+                                    st.progress(rating / 100)
+                                    st.write(f"総合評価: {rating}/100")
+                                
+                                # 主要指標サマリー
+                                st.subheader('📈 主要指標')
+                                
+                                col1, col2 = st.columns(2)
+                                
+                                with col1:
+                                    st.write("### 速度指標")
+                                    if 'speed' in summary:
+                                        speed_stats = summary['speed']
+                                        st.write(f"🚀 最高速度: {speed_stats['max']:.2f} ノット")
+                                        st.write(f"🔄 平均速度: {speed_stats['avg']:.2f} ノット")
+                                        st.write(f"⬇️ 最低速度: {speed_stats['min']:.2f} ノット")
+                                    
+                                    if 'total_distance_nm' in summary:
+                                        st.write(f"🛣️ 走行距離: {summary['total_distance_nm']:.2f} 海里")
+                                
+                                with col2:
+                                    st.write("### 運航指標")
+                                    if 'tack_count' in summary:
+                                        st.write(f"↪️ タック回数: {summary['tack_count']}")
+                                    
+                                    if 'tack_analysis' in summary:
+                                        tack_analysis = summary['tack_analysis']
+                                        st.write(f"⏱️ 平均タック回復時間: {tack_analysis.get('avg_recovery_time', 0):.1f} 秒")
+                                    
+                                    if 'vmg' in summary:
+                                        vmg = summary['vmg']
+                                        st.write(f"🎯 VMG効率: {vmg.get('vmg_efficiency', 0):.1f}%")
+                                
+                                # 改善点
+                                st.subheader('📝 改善点とアドバイス')
+                                
+                                if 'improvement_points' in summary:
+                                    for i, point in enumerate(summary['improvement_points']):
+                                        st.write(f"{i+1}. {point}")
+                                else:
+                                    # 改善点がない場合は自動生成
+                                    if 'speed' in summary and 'tack_analysis' in summary:
+                                        speed = summary['speed']
+                                        tack = summary['tack_analysis']
+                                        
+                                        st.write("1. 速度の安定性を高めることで平均速度の向上が見込めます")
+                                        
+                                        if tack.get('avg_loss_knots', 0) > 1.0:
+                                            st.write("2. タック時の速度損失を低減することで効率が向上します")
+                                        
+                                        if 'vmg' in summary and summary['vmg'].get('vmg_efficiency', 0) < 80:
+                                            st.write("3. 風上帆走時のVMG効率の改善が推奨されます")
+                                
+                                # データ品質評価
+                                st.subheader('📋 データ品質評価')
+                                
+                                if 'data_quality' in summary:
+                                    quality = summary['data_quality']
+                                    st.write(f"📊 サンプリング密度: {quality.get('sampling_rate', 0):.2f} Hz")
+                                    st.write(f"⏱️ データ期間: {quality.get('duration_minutes', 0):.1f} 分")
+                                    st.write(f"🔢 データポイント: {quality.get('points_count', 0)}")
+                                    
+                                    if 'noise_level' in quality:
+                                        st.write(f"📶 ノイズレベル: {quality['noise_level']}")
+                                else:
+                                    # データ品質情報がない場合の表示
+                                    points_count = len(st.session_state.boats_data[summary_boat])
+                                    if 'timestamp' in st.session_state.boats_data[summary_boat].columns:
+                                        df = st.session_state.boats_data[summary_boat]
+                                        duration = (df['timestamp'].max() - df['timestamp'].min()).total_seconds() / 60
+                                        sampling_rate = points_count / (duration * 60) if duration > 0 else 0
+                                        
+                                        st.write(f"📊 サンプリング密度: {sampling_rate:.2f} Hz")
+                                        st.write(f"⏱️ データ期間: {duration:.1f} 分")
+                                    
+                                    st.write(f"🔢 データポイント: {points_count}")
+                        else:
+                            st.warning(f"{summary_boat} のパフォーマンスサマリーを生成できませんでした")
+                    
+                    except Exception as e:
+                        st.error(f'サマリー生成中にエラーが発生しました: {e}')
+
+# フッター（シンプル化）
+st.sidebar.markdown('---')
+st.sidebar.info('セーリング戦略分析システム v1.0')st.metric("データポイント数", f"{len(df):,}")
                                 with stats_cols[1]:
                                     if 'speed' in df.columns:
                                         st.metric("平均速度", f"{df['speed'].mean() * 1.94384:.1f} ノット")
@@ -564,21 +780,12 @@ elif page == 'パフォーマンス分析':
                                 fig = performance_plots.create_tack_analysis_plot(
                                     boat_data,
                                     tack_threshold=st.session_state.last_plot['params']['tack_threshold'],
-                                    window_size=st
-
-                                    elif plot_type == 'タック分析':
-                            if 'course' not in boat_data.columns:
-                                st.error('このグラフにはコースデータが必要です')
-                            else:
-                                fig = performance_plots.create_tack_analysis_plot(
-                                    boat_data,
-                                    tack_threshold=st.session_state.last_plot['params']['tack_threshold'],
                                     window_size=st.session_state.last_plot['params']['window_size']
                                 )
                         elif plot_type == 'パフォーマンスダッシュボード':
                             # 必要なカラムのチェック
                             required_cols = []
-                            if 'speed' in st.session_state.last_plot['params']['metrics']:
+                            if '速度' in st.session_state.last_plot['params']['metrics']:
                                 required_cols.append('speed')
                             if '風向' in st.session_state.last_plot['params']['metrics']:
                                 required_cols.append('wind_direction')
@@ -605,367 +812,3 @@ elif page == 'パフォーマンス分析':
                                     selected_boat,
                                     metrics=st.session_state.last_plot['params']['metrics']
                                 )
-                        
-                        # グラフ表示
-                        if 'fig' in locals():
-                            st.plotly_chart(fig, use_container_width=True)
-                            
-                            # グラフ保存機能
-                            st.download_button(
-                                label="グラフを画像として保存",
-                                data=fig.to_image(format="png", engine="kaleido"),
-                                file_name=f"{selected_boat}_{plot_type}.png",
-                                mime="image/png",
-                            )
-                    
-                    except Exception as e:
-                        st.error(f'グラフ生成中にエラーが発生しました: {e}')
-                else:
-                    st.info('左側の「グラフを生成」ボタンをクリックしてください。')
-        
-        with tabs[1]:
-            st.subheader('複数艇比較')
-            
-            # 比較するボートを選択
-            boat_options = list(st.session_state.boats_data.keys())
-            if len(boat_options) >= 2:
-                comparison_boats = st.multiselect(
-                    '比較するボートを選択:', 
-                    boat_options, 
-                    default=boat_options[:min(3, len(boat_options))]
-                )
-                
-                if comparison_boats and len(comparison_boats) >= 2:
-                    # 比較グラフの種類
-                    comparison_type = st.selectbox(
-                        '比較タイプ:',
-                        ['速度比較', '航跡比較', '風向対応比較', '時間同期比較']
-                    )
-                    
-                    # 比較パラメータ設定
-                    if comparison_type == '速度比較':
-                        smoothing = st.slider('平滑化:', 0, 10, 2)
-                        use_time = st.checkbox('時間軸で表示', value=True)
-                    elif comparison_type == '航跡比較':
-                        show_markers = st.checkbox('ポイントを表示', value=True)
-                        colorscale = st.selectbox('カラースケール:', ['rainbow', 'viridis', 'plasma'])
-                    elif comparison_type == '風向対応比較':
-                        bin_count = st.slider('風向ビン数:', 4, 36, 12, step=4)
-                    elif comparison_type == '時間同期比較':
-                        sync_window = st.slider('同期ウィンドウ (分):', 5, 60, 30, step=5)
-                        metrics = st.multiselect(
-                            '表示する指標:', 
-                            ['速度', '風向', 'コース'], 
-                            default=['速度']
-                        )
-                    
-                    # 比較グラフ生成
-                    if st.button('比較グラフを生成', type="primary"):
-                        with st.spinner('比較グラフを生成中...'):
-                            try:
-                                # 選択したボートのデータを辞書に格納
-                                data_dict = {}
-                                for boat in comparison_boats:
-                                    data_dict[boat] = st.session_state.boats_data[boat]
-                                
-                                # 比較グラフの生成
-                                if comparison_type == '速度比較':
-                                    fig = st.session_state.performance_plots.create_multi_boat_speed_comparison(
-                                        data_dict,
-                                        smoothing=smoothing,
-                                        use_time=use_time
-                                    )
-                                elif comparison_type == '航跡比較':
-                                    fig = st.session_state.performance_plots.create_multi_boat_track_comparison(
-                                        data_dict,
-                                        show_markers=show_markers,
-                                        colorscale=colorscale
-                                    )
-                                elif comparison_type == '風向対応比較':
-                                    fig = st.session_state.performance_plots.create_wind_response_comparison(
-                                        data_dict,
-                                        bin_count=bin_count
-                                    )
-                                elif comparison_type == '時間同期比較':
-                                    fig = st.session_state.performance_plots.create_synchronized_comparison(
-                                        data_dict,
-                                        sync_window=sync_window,
-                                        metrics=metrics
-                                    )
-                                
-                                # グラフ表示
-                                if 'fig' in locals():
-                                    st.plotly_chart(fig, use_container_width=True)
-                                
-                            except Exception as e:
-                                st.error(f'比較グラフ生成中にエラーが発生しました: {e}')
-                else:
-                    st.info('比較するには2つ以上のボートを選択してください。')
-            else:
-                st.warning('比較するにはデータが2つ以上必要です。まずはデータをアップロードしてください。')
-        
-        with tabs[2]:
-            st.subheader('パフォーマンスサマリー')
-            
-            # サマリーを表示するボートの選択
-            summary_boat = st.selectbox('サマリーを表示するボート:', list(st.session_state.boats_data.keys()), key='summary_boat')
-            
-            # サマリータイプの選択
-            summary_type = st.radio(
-                'サマリータイプ:',
-                ['基本統計', '詳細分析', '総合レポート'],
-                horizontal=True
-            )
-            
-            if st.button('サマリーを生成', type="primary"):
-                with st.spinner('サマリーを生成中...'):
-                    try:
-                        # パフォーマンスサマリーの取得
-                        summary = st.session_state.visualizer.create_performance_summary(summary_boat)
-                        
-                        if summary:
-                            if summary_type == '基本統計':
-                                # 基本統計を表形式で表示
-                                st.subheader(f"{summary_boat} の基本統計")
-                                
-                                metrics_col1, metrics_col2, metrics_col3 = st.columns(3)
-                                
-                                with metrics_col1:
-                                    if 'speed' in summary:
-                                        st.metric("最高速度", f"{summary['speed']['max']:.1f} ノット")
-                                        st.metric("平均速度", f"{summary['speed']['avg']:.1f} ノット")
-                                
-                                with metrics_col2:
-                                    if 'total_distance_nm' in summary:
-                                        st.metric("走行距離", f"{summary['total_distance_nm']:.2f} 海里")
-                                    if 'duration_seconds' in summary:
-                                        minutes = summary['duration_seconds'] / 60
-                                        st.metric("走行時間", f"{minutes:.1f} 分")
-                                
-                                with metrics_col3:
-                                    if 'tack_count' in summary:
-                                        st.metric("タック回数", summary['tack_count'])
-                                    if 'vmg' in summary:
-                                        st.metric("平均VMG", f"{summary['vmg']['avg_vmg']:.2f}")
-                                
-                                # データポイントの分布を表示
-                                if 'speed' in summary:
-                                    speed_data = st.session_state.boats_data[summary_boat]['speed'] * 1.94384  # m/s -> ノット
-                                    
-                                    # ヒストグラム
-                                    fig = px.histogram(
-                                        speed_data,
-                                        title="速度分布",
-                                        labels={'value': '速度 (ノット)', 'count': '頻度'},
-                                        nbins=20
-                                    )
-                                    st.plotly_chart(fig, use_container_width=True)
-                            
-                            elif summary_type == '詳細分析':
-                                # 詳細分析表示
-                                st.subheader(f"{summary_boat} の詳細分析")
-                                
-                                # タブで情報を整理
-                                detail_tabs = st.tabs(['速度分析', 'タック分析', 'VMG分析'])
-                                
-                                with detail_tabs[0]:
-                                    if 'speed_segments' in summary:
-                                        segments = summary['speed_segments']
-                                        
-                                        # セグメント別の速度表
-                                        st.subheader('セグメント別速度分析')
-                                        segment_data = []
-                                        for i, seg in enumerate(segments):
-                                            segment_data.append({
-                                                'セグメント': f"Seg {i+1}",
-                                                '平均速度 (ノット)': f"{seg['avg_speed']:.1f}",
-                                                '最高速度 (ノット)': f"{seg['max_speed']:.1f}",
-                                                '持続時間 (秒)': f"{seg['duration']:.0f}"
-                                            })
-                                        
-                                        st.table(pd.DataFrame(segment_data))
-                                        
-                                        # 速度トレンドグラフ
-                                        fig = go.Figure()
-                                        
-                                        boat_data = st.session_state.boats_data[summary_boat]
-                                        if 'timestamp' in boat_data.columns and 'speed' in boat_data.columns:
-                                            # 時間を分単位に変換
-                                            times = [(t - boat_data['timestamp'].iloc[0]).total_seconds() / 60 
-                                                    for t in boat_data['timestamp']]
-                                            
-                                            # 速度をノットに変換
-                                            speeds = boat_data['speed'] * 1.94384
-                                            
-                                            fig.add_trace(go.Scatter(
-                                                x=times,
-                                                y=speeds,
-                                                mode='lines',
-                                                name='速度'
-                                            ))
-                                            
-                                            fig.update_layout(
-                                                title='速度トレンド',
-                                                xaxis_title='時間 (分)',
-                                                yaxis_title='速度 (ノット)'
-                                            )
-                                            
-                                            st.plotly_chart(fig, use_container_width=True)
-                                    else:
-                                        st.info('速度セグメント分析データはありません。')
-                                
-                                with detail_tabs[1]:
-                                    if 'tack_analysis' in summary:
-                                        tack_analysis = summary['tack_analysis']
-                                        
-                                        # タック分析メトリクス
-                                        metrics_cols = st.columns(3)
-                                        with metrics_cols[0]:
-                                            st.metric("タック回数", summary.get('tack_count', 0))
-                                        with metrics_cols[1]:
-                                            st.metric("平均速度損失", f"{tack_analysis.get('avg_loss_knots', 0):.2f} ノット")
-                                        with metrics_cols[2]:
-                                            st.metric("平均回復時間", f"{tack_analysis.get('avg_recovery_time', 0):.1f} 秒")
-                                        
-                                        # タック詳細テーブル
-                                        if 'tacks' in tack_analysis:
-                                            tack_data = []
-                                            for i, tack in enumerate(tack_analysis['tacks']):
-                                                tack_data.append({
-                                                    'タック#': i+1,
-                                                    '時間': tack.get('time', ''),
-                                                    '前コース': f"{tack.get('pre_course', 0):.0f}°",
-                                                    '後コース': f"{tack.get('post_course', 0):.0f}°",
-                                                    '損失 (ノット)': f"{tack.get('speed_loss', 0):.2f}",
-                                                    '回復時間 (秒)': f"{tack.get('recovery_time', 0):.1f}"
-                                                })
-                                            
-                                            st.subheader('タック詳細')
-                                            st.table(pd.DataFrame(tack_data))
-                                    else:
-                                        st.info('タック分析データはありません。')
-                                
-                                with detail_tabs[2]:
-                                    if 'vmg' in summary:
-                                        vmg = summary['vmg']
-                                        
-                                        # VMGメトリクス
-                                        metrics_cols = st.columns(3)
-                                        with metrics_cols[0]:
-                                            st.metric("平均VMG", f"{vmg.get('avg_vmg', 0):.2f}")
-                                        with metrics_cols[1]:
-                                            st.metric("最大VMG", f"{vmg.get('max_vmg', 0):.2f}")
-                                        with metrics_cols[2]:
-                                            st.metric("VMG効率", f"{vmg.get('vmg_efficiency', 0):.1f}%")
-                                        
-                                        # VMGプロット
-                                        if 'vmg_data' in vmg:
-                                            fig = px.scatter(
-                                                vmg['vmg_data'],
-                                                x='wind_angle',
-                                                y='vmg',
-                                                color='speed',
-                                                title='風向角度とVMGの関係',
-                                                labels={
-                                                    'wind_angle': '風向角度 (度)',
-                                                    'vmg': 'VMG',
-                                                    'speed': '速度 (ノット)'
-                                                }
-                                            )
-                                            st.plotly_chart(fig, use_container_width=True)
-                                    else:
-                                        st.info('VMG分析データはありません。')
-                            
-                            elif summary_type == '総合レポート':
-                                # 総合レポートを表示
-                                st.subheader(f"{summary_boat} の総合パフォーマンスレポート")
-                                
-                                # 全体評価
-                                st.subheader('📊 全体評価')
-                                
-                                if 'overall_rating' in summary:
-                                    rating = summary['overall_rating']
-                                    st.progress(rating / 100)
-                                    st.write(f"総合評価: {rating}/100")
-                                
-                                # 主要指標サマリー
-                                st.subheader('📈 主要指標')
-                                
-                                col1, col2 = st.columns(2)
-                                
-                                with col1:
-                                    st.write("### 速度指標")
-                                    if 'speed' in summary:
-                                        speed_stats = summary['speed']
-                                        st.write(f"🚀 最高速度: {speed_stats['max']:.2f} ノット")
-                                        st.write(f"🔄 平均速度: {speed_stats['avg']:.2f} ノット")
-                                        st.write(f"⬇️ 最低速度: {speed_stats['min']:.2f} ノット")
-                                    
-                                    if 'total_distance_nm' in summary:
-                                        st.write(f"🛣️ 走行距離: {summary['total_distance_nm']:.2f} 海里")
-                                
-                                with col2:
-                                    st.write("### 運航指標")
-                                    if 'tack_count' in summary:
-                                        st.write(f"↪️ タック回数: {summary['tack_count']}")
-                                    
-                                    if 'tack_analysis' in summary:
-                                        tack_analysis = summary['tack_analysis']
-                                        st.write(f"⏱️ 平均タック回復時間: {tack_analysis.get('avg_recovery_time', 0):.1f} 秒")
-                                    
-                                    if 'vmg' in summary:
-                                        vmg = summary['vmg']
-                                        st.write(f"🎯 VMG効率: {vmg.get('vmg_efficiency', 0):.1f}%")
-                                
-                                # 改善点
-                                st.subheader('📝 改善点とアドバイス')
-                                
-                                if 'improvement_points' in summary:
-                                    for i, point in enumerate(summary['improvement_points']):
-                                        st.write(f"{i+1}. {point}")
-                                else:
-                                    # 改善点がない場合は自動生成
-                                    if 'speed' in summary and 'tack_analysis' in summary:
-                                        speed = summary['speed']
-                                        tack = summary['tack_analysis']
-                                        
-                                        st.write("1. 速度の安定性を高めることで平均速度の向上が見込めます")
-                                        
-                                        if tack.get('avg_loss_knots', 0) > 1.0:
-                                            st.write("2. タック時の速度損失を低減することで効率が向上します")
-                                        
-                                        if 'vmg' in summary and summary['vmg'].get('vmg_efficiency', 0) < 80:
-                                            st.write("3. 風上帆走時のVMG効率の改善が推奨されます")
-                                
-                                # データ品質評価
-                                st.subheader('📋 データ品質評価')
-                                
-                                if 'data_quality' in summary:
-                                    quality = summary['data_quality']
-                                    st.write(f"📊 サンプリング密度: {quality.get('sampling_rate', 0):.2f} Hz")
-                                    st.write(f"⏱️ データ期間: {quality.get('duration_minutes', 0):.1f} 分")
-                                    st.write(f"🔢 データポイント: {quality.get('points_count', 0)}")
-                                    
-                                    if 'noise_level' in quality:
-                                        st.write(f"📶 ノイズレベル: {quality['noise_level']}")
-                                else:
-                                    # データ品質情報がない場合の表示
-                                    points_count = len(st.session_state.boats_data[summary_boat])
-                                    if 'timestamp' in st.session_state.boats_data[summary_boat].columns:
-                                        df = st.session_state.boats_data[summary_boat]
-                                        duration = (df['timestamp'].max() - df['timestamp'].min()).total_seconds() / 60
-                                        sampling_rate = points_count / (duration * 60) if duration > 0 else 0
-                                        
-                                        st.write(f"📊 サンプリング密度: {sampling_rate:.2f} Hz")
-                                        st.write(f"⏱️ データ期間: {duration:.1f} 分")
-                                    
-                                    st.write(f"🔢 データポイント: {points_count}")
-                        else:
-                            st.warning(f"{summary_boat} のパフォーマンスサマリーを生成できませんでした")
-                    
-                    except Exception as e:
-                        st.error(f'サマリー生成中にエラーが発生しました: {e}')
-
-# フッター（シンプル化）
-st.sidebar.markdown('---')
-st.sidebar.info('セーリング戦略分析システム v1.0')
