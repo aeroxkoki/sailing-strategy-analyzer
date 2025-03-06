@@ -20,6 +20,7 @@ from datetime import datetime, timedelta
 import base64
 from io import StringIO
 import json
+import tempfile
 
 # プロジェクトのルートディレクトリをパスに追加
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
@@ -29,6 +30,7 @@ from visualization.sailing_visualizer import SailingVisualizer
 from visualization.map_display import SailingMapDisplay
 from visualization.performance_plots import SailingPerformancePlots
 import visualization.visualization_utils as viz_utils
+from data_processing.sailing_data_processor import SailingDataProcessor
 
 # ページ設定
 st.set_page_config(
@@ -50,6 +52,8 @@ if 'performance_plots' not in st.session_state:
     st.session_state.performance_plots = SailingPerformancePlots()
 if 'boats_data' not in st.session_state:
     st.session_state.boats_data = {}
+if 'data_processor' not in st.session_state:
+    st.session_state.data_processor = SailingDataProcessor()
 
 # サンプルデータ生成関数
 def generate_sample_data():
@@ -107,6 +111,40 @@ def process_csv(file):
         
     except Exception as e:
         return None, f"CSVファイルの処理中にエラーが発生しました: {str(e)}"
+
+# GPXファイル処理関数
+def process_gpx(file):
+    """GPXファイルを処理してデータフレームに変換"""
+    try:
+        # 一時ファイルに保存
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.gpx') as tmp_file:
+            tmp_file.write(file.getvalue())
+            tmp_file_path = tmp_file.name
+        
+        # ファイル内容を読み込み
+        with open(tmp_file_path, 'r') as f:
+            gpx_content = f.read()
+        
+        # 一時ファイルを削除
+        os.unlink(tmp_file_path)
+        
+        # GPXデータをSailingDataProcessorで処理
+        processor = st.session_state.data_processor
+        df = processor._load_gpx(gpx_content, 'temp_id')
+        
+        if df is None:
+            return None, "GPXファイルの処理に失敗しました。ファイル形式が正しいか確認してください。"
+            
+        # 最低限必要な列があるか確認
+        required_columns = ['timestamp', 'latitude', 'longitude']
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            return None, f"GPXファイルに必要な列がありません: {missing_columns}"
+            
+        return df, None
+        
+    except Exception as e:
+        return None, f"GPXファイルの処理中にエラーが発生しました: {str(e)}"
 
 # サイドバーのナビゲーション
 page = st.sidebar.selectbox(
@@ -182,9 +220,14 @@ elif page == 'データアップロード':
                             if error:
                                 st.error(error)
                                 st.stop()
+                        elif file_extension == 'gpx':
+                            # GPXファイルの処理
+                            df, error = process_gpx(uploaded_file)
+                            if error:
+                                st.error(error)
+                                st.stop()
                         else:
-                            # GPXファイルの処理（データ処理モジュールが必要）
-                            st.error('GPXファイルの処理モジュールがまだ実装されていません')
+                            st.error(f'未対応のファイル形式です: {file_extension}')
                             st.stop()
                         
                         # セッションにデータを保存
