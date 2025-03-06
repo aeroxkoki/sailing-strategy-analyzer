@@ -574,13 +574,6 @@ elif page == 'パフォーマンス分析':
                                 required_cols.append('speed')
                             if '風向' in st.session_state.last_plot['params']['metrics']:
                                 required_cols.append('wind_direction')
-                            if 'VMG' in st.session_
-                            # 必要なカラムのチェック
-                            required_cols = []
-                            if '速度' in st.session_state.last_plot['params']['metrics']:
-                                required_cols.append('speed')
-                            if '風向' in st.session_state.last_plot['params']['metrics']:
-                                required_cols.append('wind_direction')
                             if 'VMG' in st.session_state.last_plot['params']['metrics']:
                                 required_cols.extend(['speed', 'course', 'wind_direction'])
                             if 'タック' in st.session_state.last_plot['params']['metrics']:
@@ -604,8 +597,7 @@ elif page == 'パフォーマンス分析':
                                     selected_boat,
                                     metrics=st.session_state.last_plot['params']['metrics']
                                 )
-                        
-                        # グラフ表示
+                                # グラフ表示
                         if fig is not None:
                             st.plotly_chart(fig, use_container_width=True)
                             
