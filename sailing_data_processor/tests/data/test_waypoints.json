@@ -1,0 +1,28 @@
+{
+  "course": [
+    {
+      "name": "Start",
+      "lat": 35.605,
+      "lon": 139.775,
+      "type": "start"
+    },
+    {
+      "name": "Mark 1",
+      "lat": 35.625,
+      "lon": 139.795,
+      "type": "rounding"
+    },
+    {
+      "name": "Mark 2",
+      "lat": 35.605,
+      "lon": 139.795,
+      "type": "rounding"
+    },
+    {
+      "name": "Finish",
+      "lat": 35.605,
+      "lon": 139.775,
+      "type": "finish"
+    }
+  ]
+}
