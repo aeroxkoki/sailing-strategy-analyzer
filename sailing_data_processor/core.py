@@ -17,7 +17,7 @@ import warnings
 import gc
 import os
 import time
-from multiprocessing import Pool, cpu_count
+from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 
 # 内部モジュールのインポート
