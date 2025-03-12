@@ -381,7 +381,7 @@ class SailingVisualizer:
                 reference_times = pd.date_range(min_time, max_time, freq='1S')
                 
                 # visualization_utilsの関数を使用してデータを同期
-                from visualization.visualization_utils import synchronize_boat_data
+                from .visualization_utils import synchronize_boat_data
                 synced_data = synchronize_boat_data(
                     {name: self.boats_data[name] for name in valid_boat_names},
                     reference_times
