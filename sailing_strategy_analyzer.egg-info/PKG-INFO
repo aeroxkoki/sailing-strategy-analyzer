@@ -1,0 +1,28 @@
+Metadata-Version: 2.1
+Name: sailing-strategy-analyzer
+Version: 0.1.0
+Summary: セーリング戦略分析システム - GPSデータからの風向風速推定と最適コース戦略提案
+Home-page: https://github.com/username/sailing-strategy-analyzer
+Author: Sailing Strategy Team
+Author-email: contact@example.com
+License: UNKNOWN
+Platform: UNKNOWN
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Science/Research
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Requires-Python: >=3.8
+
+
+    セーリング戦略分析システムは、GPSデータをベースにAI技術を活用して風向風速を推定し、
+    最適なコース戦略を提案することで、セーリング競技者の意思決定を支援するツールです。
+    
+    主な機能:
+    - GPSデータの読み込みと前処理
+    - 風向風速の推定
+    - コース戦略の最適化
+    - データの可視化
+    
+
