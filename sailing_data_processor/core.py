@@ -901,15 +901,21 @@ if 'bearing' in df.columns:
                                      
                     df.loc[idx, 'bearing'] = interp_bearing
                 
-                elif prev_normal_idx is not None:
-                    # 前の値のみがある場合は前方補完
-                    for col in ['latitude', 'longitude', 'speed', 'bearing']:
-                        df.loc[idx, col] = df.loc[prev_normal_idx, col]
+              elif prev_normal_idx is not None:
+    # 前の値のみがある場合は前方補完
+    cols_to_fill = ['latitude', 'longitude', 'speed']
+    if 'bearing' in df.columns:
+        cols_to_fill.append('bearing')
+    for col in cols_to_fill:
+        df.loc[idx, col] = df.loc[prev_normal_idx, col]
                 
                 elif next_normal_idx is not None:
-                    # 次の値のみがある場合は後方補完
-                    for col in ['latitude', 'longitude', 'speed', 'bearing']:
-                        df.loc[idx, col] = df.loc[next_normal_idx, col]
+    # 次の値のみがある場合は後方補完
+    cols_to_fill = ['latitude', 'longitude', 'speed']
+    if 'bearing' in df.columns:
+        cols_to_fill.append('bearing')
+    for col in cols_to_fill:
+        df.loc[idx, col] = df.loc[next_normal_idx, col]
         
         # 不要な列を削除
         if 'acceleration' in df.columns:
