@@ -844,7 +844,10 @@ class SailingDataProcessor:
         
         # 異常な速度を検出
         speed_mask = df['speed'] > max_speed_ms
-        
+                                       
+        # タイムスタンプの差分を秒単位で計算
+　　　　　df['time_diff'] = df['timestamp'].diff().dt.total_seconds()
+
         # 異常な加速度を検出
         df['acceleration'] = df['speed'].diff() / df['time_diff'].replace(0, np.nan)
         accel_mask = abs(df['acceleration']) > max_accel
