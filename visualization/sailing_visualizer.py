@@ -487,12 +487,12 @@ class SailingVisualizer:
         boat_data = self.boats_data[boat_name]
         
         # visualization_utilsの関数を使用して統計を計算
-        from visualization.visualization_utils import calculate_statistics
+        from .visualization_utils import calculate_statistics
         stats = calculate_statistics(boat_data)
         
         # VMGの計算（風向と速度データがある場合）
         if 'wind_direction' in boat_data.columns and 'course' in boat_data.columns and 'speed' in boat_data.columns:
-            from visualization.visualization_utils import calculate_vmg
+            from .visualization_utils import calculate_vmg
             boat_data['vmg'] = boat_data.apply(
                 lambda row: calculate_vmg(row['speed'], row['course'], row['wind_direction']),
                 axis=1
@@ -508,7 +508,7 @@ class SailingVisualizer:
         
         # タックの検出と分析
         if 'course' in boat_data.columns:
-            from visualization.visualization_utils import detect_tacks
+            from .visualization_utils import detect_tacks
             tacks = detect_tacks(boat_data)
             
             # タック回数
