@@ -21,7 +21,7 @@ from visualization.sailing_visualizer import SailingVisualizer
 from visualization.map_display import SailingMapDisplay
 from visualization.performance_plots import SailingPerformancePlots
 import visualization.visualization_utils as viz_utils
-from data_processing.sailing_data_processor import SailingDataProcessor
+from sailing_data_processor.core import SailingDataProcessor
 
 # ページ設定
 st.set_page_config(
