@@ -878,9 +878,19 @@ class SailingDataProcessor:
                             
                         df.loc[idx, col] = interpolated_value
                             
-                    # ベアリングの補間（円環データなので特殊処理）
-                    bearing1 = df.loc[prev_normal_idx, 'bearing']
-                    bearing2 = df.loc[next_normal_idx, 'bearing']
+                    # ベアリングの補間（円環データなので特殊処理）- bearingカラムが存在する場合のみ
+if 'bearing' in df.columns:
+    bearing1 = df.loc[prev_normal_idx, 'bearing']
+    bearing2 = df.loc[next_normal_idx, 'bearing']
+    
+    # 角度差を計算（0-360度の循環を考慮）
+    angle_diff = (bearing2 - bearing1 + 180) % 360 - 180
+    
+    # 補間値を計算
+    interp_bearing = (bearing1 + angle_diff * (idx - prev_normal_idx) / 
+                     (next_normal_idx - prev_normal_idx)) % 360
+                     
+    df.loc[idx, 'bearing'] = interp_bearing
                     
                     # 角度差を計算（0-360度の循環を考慮）
                     angle_diff = (bearing2 - bearing1 + 180) % 360 - 180
