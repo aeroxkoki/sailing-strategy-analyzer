@@ -7,7 +7,7 @@ import psutil
 import os
 import time
 import math
-from multiprocessing import Pool, cpu_count
+from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 
 class PerformanceOptimizer:
