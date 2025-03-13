@@ -312,7 +312,7 @@ class PerformanceOptimizer:
         # デ​​ータフレームを分割
         return [df.iloc[i*chunk_size:(i+1)*chunk_size].copy() for i in range(n_chunks)]
     
-    def parallel_process_chunks(self, chunks: List[pd.DataFrame], process_func: callable, 
+def parallel_process_chunks(self, chunks: List[pd.DataFrame], process_func: callable, 
                          **kwargs) -> List[pd.DataFrame]:
     """
     データチャンクを並列処理
