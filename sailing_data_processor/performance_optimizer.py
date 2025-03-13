@@ -313,44 +313,45 @@ class PerformanceOptimizer:
         return [df.iloc[i*chunk_size:(i+1)*chunk_size].copy() for i in range(n_chunks)]
     
     def parallel_process_chunks(self, chunks: List[pd.DataFrame], process_func: callable, 
-                             **kwargs) -> List[pd.DataFrame]:
-        """
-        データチャンクを並列処理
+                         **kwargs) -> List[pd.DataFrame]:
+    """
+    データチャンクを並列処理
+    
+    Parameters:
+    -----------
+    chunks : List[pd.DataFrame]
+        処理するDataFrameのチャンクリスト
+    process_func : callable
+        各チャンクに適用する処理関数 (DataFrame -> DataFrame)
+    **kwargs
+        処理関数に渡す追加引数
         
-        Parameters:
-        -----------
-        chunks : List[pd.DataFrame]
-            処理するDataFrameのチャンクリスト
-        process_func : callable
-            各チャンクに適用する処理関数 (DataFrame -> DataFrame)
-        **kwargs
-            処理関数に渡す追加引数
-            
-        Returns:
-        --------
-        List[pd.DataFrame]
-            処理されたチャンクのリスト
-        """
-        if not chunks:
-            return []
-            
-        # 並列処理用の部分関数を作成
-        func = partial(process_func, **kwargs)
+    Returns:
+    --------
+    List[pd.DataFrame]
+        処理されたチャンクのリスト
+    """
+    if not chunks:
+        return []
         
-        # プロセスプールを作成
-        # 使用するワーカー数はチャンク数と最大ワーカー数の小さい方
-        n_workers = min(len(chunks), self.max_workers)
-        
-        results = []
-        if n_workers > 1:
-            # 並列処理の実行
-            with Pool(processes=n_workers) as pool:
-                results = pool.map(func, chunks)
-        else:
-            # 並列処理しない場合
-            results = [func(chunk) for chunk in chunks]
-        
-        return results
+    # 並列処理用の部分関数を作成
+    func = partial(process_func, **kwargs)
+    
+    # スレッドプールに変更
+    # 使用するワーカー数はチャンク数と最大ワーカー数の小さい方
+    n_workers = min(len(chunks), self.max_workers)
+    
+    results = []
+    if n_workers > 1:
+        # 並列処理の実行
+        with ThreadPoolExecutor(max_workers=n_workers) as executor:
+            futures = [executor.submit(func, chunk) for chunk in chunks]
+            results = [future.result() for future in futures]
+    else:
+        # 並列処理しない場合
+        results = [func(chunk) for chunk in chunks]
+    
+    return results
     
     def merge_processed_chunks(self, processed_chunks: List[pd.DataFrame]) -> pd.DataFrame:
         """
