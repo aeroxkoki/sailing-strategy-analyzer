@@ -958,15 +958,6 @@ if 'bearing' in df.columns:
                      (next_normal_idx - prev_normal_idx)) % 360
                      
     df.loc[idx, 'bearing'] = interp_bearing
-                    
-                    # 角度差を計算（0-360度の循環を考慮）
-                    angle_diff = (bearing2 - bearing1 + 180) % 360 - 180
-                    
-                    # 補間値を計算
-                    interp_bearing = (bearing1 + angle_diff * (idx - prev_normal_idx) / 
-                                     (next_normal_idx - prev_normal_idx)) % 360
-                                     
-                    df.loc[idx, 'bearing'] = interp_bearing
                 
 elif prev_normal_idx is not None:
     # 前の値のみがある場合は前方補完
