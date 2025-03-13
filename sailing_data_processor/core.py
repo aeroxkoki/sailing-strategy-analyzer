@@ -206,6 +206,9 @@ class SailingDataProcessor:
         """
         if not auto_id and (manual_ids is None or len(manual_ids) != len(file_contents)):
             raise ValueError("手動ID指定モードの場合、ファイル数と同じ数のIDが必要です")
+
+        # ここにデバッグ出力を追加
+        print(f"Debug: load_multiple_files が呼び出されました。ファイル数: {len(file_contents)}")
         
         # 最大艇数をチェック
         if len(file_contents) > self.max_boats:
@@ -250,13 +253,20 @@ class SailingDataProcessor:
             # 逐次処理
             for idx, (filename, content, filetype) in enumerate(file_contents):
                 boat_id = None if auto_id else manual_ids[idx]
+                # ここにデバッグ出力を追加
+                print(f"Debug: ファイル {filename} 読み込み開始")
                 df = self._load_file(filename, content, filetype, boat_id, self.config['auto_optimize'])
                 if df is not None:
+                    # ここにデバッグ出力を追加
+                    print(f"Debug: ファイル {filename} の読み込み成功 (行数: {len(df)})")
                     # アルゴリズムの改善：タイムスタンプでソート
                     if 'timestamp' in df.columns:
                         df = df.sort_values('timestamp').reset_index(drop=True)
                     self.boat_data[boat_id] = df
-        
+                 else:
+                    # ここにデバッグ出力を追加
+                    print(f"Debug: ファイル {filename} の読み込み失敗")
+                     
         # パフォーマンス統計を更新
         elapsed = time.time() - start_time
         self.performance_stats['load_time'] += elapsed
@@ -264,6 +274,9 @@ class SailingDataProcessor:
             self.performance_stats['total_points_processed'] += len(df)
         
         self._log_performance_step("load_multiple_end")
+
+        # ここにデバッグ出力を追加
+        print(f"Debug: 読み込み完了。艇データ数: {len(self.boat_data)}")
         
         # メモリ状況の確認と必要に応じてガベージコレクション
         if self.config['auto_gc'] and self.optimizer.check_memory_threshold():
