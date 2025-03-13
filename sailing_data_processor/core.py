@@ -132,6 +132,58 @@ class SailingDataProcessor:
             'system_memory_percent': memory_info['memory_percent']
         }
         self.performance_stats['memory_usage'].append(memory_entry)
+
+    def _ensure_columns(self, df: pd.DataFrame, required_cols: List[str], 
+                    optional_cols: List[str] = None, boat_id: str = "Unknown") -> pd.DataFrame:
+    """
+    DataFrameに必要なカラムが存在するか確認し、欠けているオプションカラムを追加します
+    
+    Parameters:
+    -----------
+    df : pd.DataFrame
+        確認するDataFrame
+    required_cols : List[str]
+        必須カラムのリスト
+    optional_cols : List[str], optional
+        オプショナルカラムのリスト（存在しない場合は空または0で初期化）
+    boat_id : str
+        ログメッセージ用の艇ID
+        
+    Returns:
+    --------
+    pd.DataFrame
+        必要に応じて追加カラムが付加されたDataFrame
+    
+    Raises:
+    -------
+    ValueError
+        必須カラムが存在しない場合
+    """
+    if df is None:
+        return None
+        
+    # 必須カラムのチェック
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    if missing_cols:
+        error_msg = f"{boat_id}: 必須カラムがありません: {missing_cols}"
+        warnings.warn(error_msg)
+        raise ValueError(error_msg)
+    
+    # オプショナルカラムの追加
+    df_modified = df.copy()
+    if optional_cols:
+        for col in optional_cols:
+            if col not in df.columns:
+                # カラムの型に応じた初期化
+                if col in ['speed', 'bearing', 'distance', 'time_diff', 'acceleration']:
+                    df_modified[col] = 0.0
+                elif col in ['timestamp']:
+                    # timestamp列が必須なら、この分岐は実行されないはず
+                    pass
+                else:
+                    df_modified[col] = None
+    
+    return df_modified
     
     def load_multiple_files(self, file_contents: List[Tuple[str, bytes, str]], 
                            auto_id: bool = True, manual_ids: List[str] = None) -> Dict[str, pd.DataFrame]:
