@@ -133,7 +133,7 @@ class SailingDataProcessor:
         }
         self.performance_stats['memory_usage'].append(memory_entry)
 
-    def _ensure_columns(self, df: pd.DataFrame, required_cols: List[str], 
+def _ensure_columns(self, df: pd.DataFrame, required_cols: List[str], 
                     optional_cols: List[str] = None, boat_id: str = "Unknown") -> pd.DataFrame:
     """
     DataFrameに必要なカラムが存在するか確認し、欠けているオプションカラムを追加します
