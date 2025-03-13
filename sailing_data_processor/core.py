@@ -263,7 +263,7 @@ class SailingDataProcessor:
                     if 'timestamp' in df.columns:
                         df = df.sort_values('timestamp').reset_index(drop=True)
                     self.boat_data[boat_id] = df
-                 else:
+                else:
                     # ここにデバッグ出力を追加
                     print(f"Debug: ファイル {filename} の読み込み失敗")
                      
