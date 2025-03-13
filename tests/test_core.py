@@ -18,16 +18,88 @@ from sailing_data_processor import SailingDataProcessor
 class TestSailingDataProcessor(unittest.TestCase):
     """SailingDataProcessorクラスのテストケース"""
     
-    def setUp(self):
-        """各テストケース実行前のセットアップ"""
-        # 警告を無視
-        warnings.filterwarnings("ignore")
+    # tests/test_core.py の setUp メソッドを拡張
+
+def setUp(self):
+    """各テストケース実行前のセットアップ"""
+    # 警告を無視
+    warnings.filterwarnings("ignore")
+    
+    # テスト用のデータプロセッサインスタンス
+    self.processor = SailingDataProcessor()
+    
+    # テスト用のデータを作成
+    self.sample_data = self._create_sample_data()
+    
+    # モックデータディレクトリの作成
+    self.test_dir = tempfile.mkdtemp()
+    
+    # テスト用のポーラーデータを作成（必要に応じて）
+    self._create_mock_polar_data()
+    
+def _create_mock_polar_data(self):
+    """テスト用のポーラーデータファイルを作成"""
+    # ポーラーデータディレクトリ
+    polar_dir = os.path.join(self.test_dir, 'polars')
+    os.makedirs(polar_dir, exist_ok=True)
+    
+    # 基本的なポーラーデータの作成
+    polar_data = [
+        "TWA,6,8,10,12,14,16,20",
+        "30,0.0,2.9,3.9,4.6,5.1,5.4,5.7",
+        "45,3.1,4.0,4.9,5.4,5.7,6.0,6.3",
+        "60,3.8,4.6,5.2,5.7,6.1,6.3,6.5",
+        "90,4.2,5.1,5.8,6.3,6.7,7.0,7.2",
+        "120,3.9,4.8,5.5,6.1,6.8,7.2,7.5",
+        "150,3.1,4.0,4.9,5.7,6.4,7.1,7.8",
+        "180,2.8,3.7,4.5,5.3,6.1,6.9,7.6"
+    ]
+    
+    # ポーラーファイルの書き込み
+    with open(os.path.join(polar_dir, 'default.csv'), 'w') as f:
+        f.write('\n'.join(polar_data))
+    
+    # 各艇種用のポーラーファイルも作成
+    for boat_type in ['laser', 'finn', '470', '49er']:
+        # 基本データを少し変更
+        modified_data = polar_data.copy()
+        modified_data[0] = "TWA,6,8,10,12,14,16,20"  # ヘッダーは同じ
         
-        # テスト用のデータプロセッサインスタンス
-        self.processor = SailingDataProcessor()
+        # 各艇種の特性に応じて値を調整
+        for i in range(1, len(modified_data)):
+            parts = modified_data[i].split(',')
+            twa = parts[0]
+            
+            # 艇種ごとの調整係数
+            if boat_type == 'laser':
+                mod = 1.02  # Laserは少し速い
+            elif boat_type == 'finn':
+                mod = 1.04  # Finnはさらに速い
+            elif boat_type == '470':
+                mod = 1.06  # 470はかなり速い
+            elif boat_type == '49er':
+                mod = 1.1   # 49erは最も速い
+            
+            # 速度値を調整
+            for j in range(1, len(parts)):
+                if parts[j] != '0.0':
+                    parts[j] = f"{float(parts[j]) * mod:.1f}"
+            
+            modified_data[i] = ','.join(parts)
         
-        # テスト用のデータを作成
-        self.sample_data = self._create_sample_data()
+        # 修正したポーラーファイルの書き込み
+        with open(os.path.join(polar_dir, f'{boat_type}.csv'), 'w') as f:
+            f.write('\n'.join(modified_data))
+    
+    # 環境変数で場所を指定（必要に応じて）
+    os.environ['SAILING_POLAR_PATH'] = polar_dir
+    
+def tearDown(self):
+    """各テストケース実行後のクリーンアップ"""
+    # 一時ディレクトリの削除
+    if hasattr(self, 'test_dir') and os.path.exists(self.test_dir):
+        import shutil
+        shutil.rmtree(self.test_dir)
     
     def _create_sample_data(self):
         """テスト用のサンプルGPSデータを作成"""
