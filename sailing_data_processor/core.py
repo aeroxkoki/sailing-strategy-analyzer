@@ -1305,7 +1305,14 @@ class SailingDataProcessor:
             for boat_id in valid_boats:
                 df = input_data[boat_id]
                 
-                # メモリ効率のためにコピーは最小限に
+                # 必須カラムとオプションカラムをチェック
+                df = self._ensure_columns(
+                    df,
+                    required_cols=['timestamp', 'latitude', 'longitude'],
+                    optional_cols=['speed', 'bearing'],
+                    boat_id=boat_id
+                )
+                # 必要なカラムだけを抽出
                 df_subset = df[['timestamp', 'latitude', 'longitude', 'speed', 'bearing']].copy()
                 
                 # タイムスタンプの重複を検出して処理
