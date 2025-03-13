@@ -930,7 +930,7 @@ class SailingDataProcessor:
                             
                         df.loc[idx, col] = interpolated_value
                             
-                    # ベアリングの補間（円環データなので特殊処理）- bearingカラムが存在する場合のみ
+# ベアリングの補間（円環データなので特殊処理）- bearingカラムが存在する場合のみ
 if 'bearing' in df.columns:
     bearing1 = df.loc[prev_normal_idx, 'bearing']
     bearing2 = df.loc[next_normal_idx, 'bearing']
@@ -953,7 +953,7 @@ if 'bearing' in df.columns:
                                      
                     df.loc[idx, 'bearing'] = interp_bearing
                 
-              elif prev_normal_idx is not None:
+elif prev_normal_idx is not None:
     # 前の値のみがある場合は前方補完
     cols_to_fill = ['latitude', 'longitude', 'speed']
     if 'bearing' in df.columns:
@@ -961,7 +961,7 @@ if 'bearing' in df.columns:
     for col in cols_to_fill:
         df.loc[idx, col] = df.loc[prev_normal_idx, col]
                 
-                elif next_normal_idx is not None:
+elif next_normal_idx is not None:
     # 次の値のみがある場合は後方補完
     cols_to_fill = ['latitude', 'longitude', 'speed']
     if 'bearing' in df.columns:
