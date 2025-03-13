@@ -141,12 +141,20 @@ class TestSailingDataProcessor(unittest.TestCase):
         # テスト用のファイルコンテンツを準備
         file_contents = []
         
+        print("Debug: サンプルデータの準備を開始")
+        
         for boat_id, df in self.sample_data.items():
+            print(f"Debug: ボートID {boat_id}, データフレームサイズ {len(df)}")
             csv_content = self._generate_csv_content(df)
             file_contents.append((f"{boat_id}.csv", csv_content, 'csv'))
         
+        print(f"Debug: 準備したファイル数: {len(file_contents)}")
+        
         # ファイル読み込み
+        print("Debug: load_multiple_files を呼び出します")
         result = self.processor.load_multiple_files(file_contents, auto_id=True)
+        
+        print(f"Debug: 読み込み結果のキー: {list(result.keys()) if result else '空のディクショナリ'}")
         
         # 検証
         self.assertEqual(len(result), 3, "3つのファイルを読み込めていない")
