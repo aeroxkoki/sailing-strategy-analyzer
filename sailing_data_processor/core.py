@@ -945,35 +945,35 @@ class SailingDataProcessor:
                             
                         df.loc[idx, col] = interpolated_value
                             
-# ベアリングの補間（円環データなので特殊処理）- bearingカラムが存在する場合のみ
-if 'bearing' in df.columns:
-    bearing1 = df.loc[prev_normal_idx, 'bearing']
-    bearing2 = df.loc[next_normal_idx, 'bearing']
-    
-    # 角度差を計算（0-360度の循環を考慮）
-    angle_diff = (bearing2 - bearing1 + 180) % 360 - 180
-    
-    # 補間値を計算
-    interp_bearing = (bearing1 + angle_diff * (idx - prev_normal_idx) / 
-                     (next_normal_idx - prev_normal_idx)) % 360
-                     
-    df.loc[idx, 'bearing'] = interp_bearing
-                
-elif prev_normal_idx is not None:
-    # 前の値のみがある場合は前方補完
-    cols_to_fill = ['latitude', 'longitude', 'speed']
-    if 'bearing' in df.columns:
-        cols_to_fill.append('bearing')
-    for col in cols_to_fill:
-        df.loc[idx, col] = df.loc[prev_normal_idx, col]
-                
-elif next_normal_idx is not None:
-    # 次の値のみがある場合は後方補完
-    cols_to_fill = ['latitude', 'longitude', 'speed']
-    if 'bearing' in df.columns:
-        cols_to_fill.append('bearing')
-    for col in cols_to_fill:
-        df.loc[idx, col] = df.loc[next_normal_idx, col]
+                    # ベアリングの補間（円環データなので特殊処理）- bearingカラムが存在する場合のみ
+                    if 'bearing' in df.columns:
+                        bearing1 = df.loc[prev_normal_idx, 'bearing']
+                        bearing2 = df.loc[next_normal_idx, 'bearing']
+                        
+                        # 角度差を計算（0-360度の循環を考慮）
+                        angle_diff = (bearing2 - bearing1 + 180) % 360 - 180
+                        
+                        # 補間値を計算
+                        interp_bearing = (bearing1 + angle_diff * (idx - prev_normal_idx) / 
+                                         (next_normal_idx - prev_normal_idx)) % 360
+                                         
+                        df.loc[idx, 'bearing'] = interp_bearing
+                                    
+                    elif prev_normal_idx is not None:
+                        # 前の値のみがある場合は前方補完
+                        cols_to_fill = ['latitude', 'longitude', 'speed']
+                        if 'bearing' in df.columns:
+                            cols_to_fill.append('bearing')
+                        for col in cols_to_fill:
+                            df.loc[idx, col] = df.loc[prev_normal_idx, col]
+                                    
+                    elif next_normal_idx is not None:
+                        # 次の値のみがある場合は後方補完
+                        cols_to_fill = ['latitude', 'longitude', 'speed']
+                        if 'bearing' in df.columns:
+                            cols_to_fill.append('bearing')
+                        for col in cols_to_fill:
+                            df.loc[idx, col] = df.loc[next_normal_idx, col]
         
         # 不要な列を削除
         if 'acceleration' in df.columns:
