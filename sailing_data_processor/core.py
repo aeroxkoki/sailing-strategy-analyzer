@@ -469,6 +469,19 @@ class SailingDataProcessor:
         pd.DataFrame
             前処理済みデータ
         """
+        if df is None or df.empty:
+            return df
+            
+        # 必須カラムをチェック
+        required_cols = ['timestamp', 'latitude', 'longitude']
+        optional_cols = ['speed', 'bearing', 'distance', 'time_diff']
+        
+        try:
+            df = self._ensure_columns(df, required_cols, optional_cols)
+        except ValueError:
+            # 必須カラムがない場合は処理不可
+            return None
+        
         # タイムスタンプのソート
         df = df.sort_values('timestamp').reset_index(drop=True)
         
@@ -503,7 +516,7 @@ class SailingDataProcessor:
             ).meters
         
         # 速度計算（メートル/秒）- 既に速度がある場合は上書きしない
-        if 'speed' not in df.columns:
+        if 'speed' not in df.columns or df['speed'].isnull().all():
             df['speed'] = np.where(df['time_diff'] > 0, df['distance'] / df['time_diff'], 0)
         
         # 異常値検出（速度ベースのアウトライアー検出）
@@ -524,7 +537,7 @@ class SailingDataProcessor:
                             df.loc[idx, 'distance'] = df.loc[idx, 'speed'] * df.loc[idx, 'time_diff']
         
         # 進行方向（ベアリング）の計算 - 既に方位がある場合は上書きしない
-        if 'bearing' not in df.columns:
+        if 'bearing' not in df.columns or df['bearing'].isnull().all():
             df['bearing'] = 0.0
             for i in range(1, len(df)):
                 lat1, lon1 = math.radians(df.loc[i-1, 'latitude']), math.radians(df.loc[i-1, 'longitude'])
