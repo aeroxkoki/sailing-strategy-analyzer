@@ -22,7 +22,7 @@ class PerformanceOptimizer:
         self.process = psutil.Process(os.getpid())
         self.memory_threshold = 0.8  # メモリ使用率の警告閾値 (80%)
         self.default_chunk_size = 10000  # デフォルトのチャンクサイズ
-        self.max_workers = max(1, cpu_count() - 1)  # 使用するCPUコア数（1つは常にメイン処理用に確保）
+        self.max_workers = max(1, psutil.cpu_count(logical=True) - 1)  # 使用するCPUコア数（1つは常にメイン処理用に確保）
     
     def get_memory_usage(self) -> Dict[str, Union[float, str]]:
         """
@@ -312,46 +312,46 @@ class PerformanceOptimizer:
         # デ​​ータフレームを分割
         return [df.iloc[i*chunk_size:(i+1)*chunk_size].copy() for i in range(n_chunks)]
     
-def parallel_process_chunks(self, chunks: List[pd.DataFrame], process_func: callable, 
-                         **kwargs) -> List[pd.DataFrame]:
-    """
-    データチャンクを並列処理
-    
-    Parameters:
-    -----------
-    chunks : List[pd.DataFrame]
-        処理するDataFrameのチャンクリスト
-    process_func : callable
-        各チャンクに適用する処理関数 (DataFrame -> DataFrame)
-    **kwargs
-        処理関数に渡す追加引数
+    def parallel_process_chunks(self, chunks: List[pd.DataFrame], process_func: callable, 
+                             **kwargs) -> List[pd.DataFrame]:
+        """
+        データチャンクを並列処理
         
-    Returns:
-    --------
-    List[pd.DataFrame]
-        処理されたチャンクのリスト
-    """
-    if not chunks:
-        return []
+        Parameters:
+        -----------
+        chunks : List[pd.DataFrame]
+            処理するDataFrameのチャンクリスト
+        process_func : callable
+            各チャンクに適用する処理関数 (DataFrame -> DataFrame)
+        **kwargs
+            処理関数に渡す追加引数
+            
+        Returns:
+        --------
+        List[pd.DataFrame]
+            処理されたチャンクのリスト
+        """
+        if not chunks:
+            return []
+            
+        # 並列処理用の部分関数を作成
+        func = partial(process_func, **kwargs)
         
-    # 並列処理用の部分関数を作成
-    func = partial(process_func, **kwargs)
-    
-    # スレッドプールに変更
-    # 使用するワーカー数はチャンク数と最大ワーカー数の小さい方
-    n_workers = min(len(chunks), self.max_workers)
-    
-    results = []
-    if n_workers > 1:
-        # 並列処理の実行
-        with ThreadPoolExecutor(max_workers=n_workers) as executor:
-            futures = [executor.submit(func, chunk) for chunk in chunks]
-            results = [future.result() for future in futures]
-    else:
-        # 並列処理しない場合
-        results = [func(chunk) for chunk in chunks]
-    
-    return results
+        # スレッドプールに変更
+        # 使用するワーカー数はチャンク数と最大ワーカー数の小さい方
+        n_workers = min(len(chunks), self.max_workers)
+        
+        results = []
+        if n_workers > 1:
+            # 並列処理の実行
+            with ThreadPoolExecutor(max_workers=n_workers) as executor:
+                futures = [executor.submit(func, chunk) for chunk in chunks]
+                results = [future.result() for future in futures]
+        else:
+            # 並列処理しない場合
+            results = [func(chunk) for chunk in chunks]
+        
+        return results
     
     def merge_processed_chunks(self, processed_chunks: List[pd.DataFrame]) -> pd.DataFrame:
         """
