@@ -272,70 +272,56 @@ class SailingDataProcessor:
         return self.boat_data
 
     def _load_file(self, filename: str, content: bytes, filetype: str, 
-                 boat_id: str = None, auto_optimize: bool = None) -> Optional[pd.DataFrame]:
+             boat_id: str = None, auto_optimize: bool = None) -> Optional[pd.DataFrame]:
         """
         単一ファイルを読み込む（内部メソッド）
-        
-        Parameters:
-        -----------
-        filename : str
-            ファイル名
-        content : bytes
-            ファイル内容
-        filetype : str
-            ファイル形式（'gpx'または'csv'）
-        boat_id : str, optional
-            艇ID
-        auto_optimize : bool, optional
-            自動最適化の有効/無効
-            
-        Returns:
-        --------
-        pd.DataFrame or None
-            読み込まれたデータ
         """
         if auto_optimize is None:
             auto_optimize = self.config['auto_optimize']
-            
+        
         # 艇IDの決定
         if boat_id is None:
             boat_id = filename.split('.')[0]
-            
-            # 同じIDが存在する場合は連番を付加
-            base_id = boat_id
-            counter = 1
-            while boat_id in self.boat_data:
-                boat_id = f"{base_id}_{counter}"
-                counter += 1
         
+        # 同じIDが存在する場合は連番を付加
+        base_id = boat_id
+        counter = 1
+        while boat_id in self.boat_data:
+            boat_id = f"{base_id}_{counter}"
+            counter += 1
+    
         # ファイルタイプに応じた読み込み
         df = None
-        if filetype.lower() == 'gpx':
-            df = self._load_gpx(content.decode('utf-8'), boat_id)
-        elif filetype.lower() == 'csv':
-            df = self._load_csv(content, boat_id)
-        else:
-            warnings.warn(f"未対応のファイル形式です: {filetype}")
-            return None
+        try:
+            if filetype.lower() == 'gpx':
+                df = self._load_gpx(content.decode('utf-8'), boat_id)
+            elif filetype.lower() == 'csv':
+                df = self._load_csv(content, boat_id)
+            else:
+                warnings.warn(f"未対応のファイル形式です: {filetype}")
+                return None
             
-        if df is None:
-            return None
+            if df is None:
+                return None
             
-        # データサイズの確認と自動ダウンサンプリング
-        if auto_optimize and len(df) > self.config['downsample_threshold']:
-            # 大きなデータセットを自動的にダウンサンプリング
-            target_size = int(len(df) * self.config['downsample_target'])
-            df = self.optimizer.downsample_data(df, target_size=target_size, method='adaptive')
-            warnings.warn(f"{boat_id}: 大規模データセットを {len(df)} ポイントにダウンサンプリングしました")
+            # データサイズの確認と自動ダウンサンプリング
+            if auto_optimize and len(df) > self.config['downsample_threshold']:
+                # 大きなデータセットを自動的にダウンサンプリング
+                target_size = int(len(df) * self.config['downsample_target'])
+                df = self.optimizer.downsample_data(df, target_size=target_size, method='adaptive')
+                warnings.warn(f"{boat_id}: 大規模データセットを {len(df)} ポイントにダウンサンプリングしました")
         
-        # メモリ最適化
-        if auto_optimize:
-            df = self.optimizer.optimize_dataframe(df)
+            # メモリ最適化
+            if auto_optimize:
+                df = self.optimizer.optimize_dataframe(df)
         
-        # 前処理（速度、方位などの計算）
-        df = self._preprocess_gps_data(df)
+            # 前処理（速度、方位などの計算）
+            df = self._preprocess_gps_data(df)
         
-        return df
+            return df
+        except Exception as e:
+            warnings.warn(f"ファイル読み込みエラー ({filename}): {str(e)}")
+            return None
     
     def _parallel_load_file(self, args):
         """
@@ -418,22 +404,20 @@ class SailingDataProcessor:
     def _load_csv(self, csv_content: bytes, boat_id: str) -> Optional[pd.DataFrame]:
         """
         CSVデータを読み込み、DataFrameに変換
-        
-        Parameters:
-        -----------
-        csv_content : bytes
-            CSVファイルの内容
-        boat_id : str
-            艇ID
-            
-        Returns:
-        --------
-        Optional[pd.DataFrame]
-            解析済みGPSデータ、読み込み失敗時はNone
         """
         try:
+            # デコードの際にエラーが発生する場合の対策
+            try:
+                decoded_content = csv_content.decode('utf-8')
+            except UnicodeDecodeError:
+                # UTF-8以外のエンコーディングを試す
+                try:
+                    decoded_content = csv_content.decode('shift-jis')
+                except UnicodeDecodeError:
+                    decoded_content = csv_content.decode('latin-1')  # 最終手段
+            
             # CSVファイルを読み込み
-            df = pd.read_csv(io.StringIO(csv_content.decode('utf-8')))
+            df = pd.read_csv(io.StringIO(decoded_content))
             
             # boat_id列を追加
             df['boat_id'] = boat_id
