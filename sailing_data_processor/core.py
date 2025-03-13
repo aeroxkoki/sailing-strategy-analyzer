@@ -233,11 +233,12 @@ class SailingDataProcessor:
             
             # 並列処理の実行
             results = []
-            with Pool(processes=n_workers) as pool:
+            with ThreadPoolExecutor(max_workers=n_workers) as executor:
                 # 部分関数を作成
                 func = partial(self._parallel_load_file)
                 # プールで実行
-                results = pool.map(func, tasks)
+                futures = [executor.submit(func, task) for task in tasks]
+                results = [future.result() for future in futures if future.result() is not None]
             
             # 結果を統合
             for result in results:
@@ -665,11 +666,12 @@ class SailingDataProcessor:
             
             # 並列処理の実行
             results = []
-            with Pool(processes=n_workers) as pool:
+            with ThreadPoolExecutor(max_workers=n_workers) as executor:
                 # 部分関数を作成
                 func = partial(self._parallel_estimate_wind)
                 # プールで実行
-                results = pool.map(func, tasks)
+                futures = [executor.submit(func, task) for task in tasks]
+                results = [future.result() for future in futures if future.result() is not None]
             
             # 結果を統合
             for result in results:
@@ -1042,11 +1044,12 @@ elif next_normal_idx is not None:
             
             # 並列処理の実行
             results = []
-            with Pool(processes=n_workers) as pool:
+            with ThreadPoolExecutor(max_workers=n_workers) as executor:
                 # 部分関数を作成
                 func = partial(self._parallel_process_anomalies)
                 # プールで実行
-                results = pool.map(func, tasks)
+                futures = [executor.submit(func, task) for task in tasks]
+                results = [future.result() for future in futures if future.result() is not None]
             
             # 結果を統合
             for result in results:
@@ -1293,11 +1296,12 @@ elif next_normal_idx is not None:
             
             # 並列処理の実行
             parallel_results = []
-            with Pool(processes=n_workers) as pool:
+            with ThreadPoolExecutor(max_workers=n_workers) as executor:
                 # 部分関数を作成
                 func = partial(self._parallel_resample_boat)
                 # プールで実行
-                parallel_results = pool.map(func, tasks)
+                futures = [executor.submit(func, task) for task in tasks]
+                parallel_results = [future.result() for future in futures if future.result() is not None]
             
             # 結果を統合
             for result in parallel_results:
