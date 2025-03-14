@@ -186,7 +186,7 @@ class SailingDataProcessor:
         return df_modified
     
     def load_multiple_files(self, file_contents: List[Tuple[str, bytes, str]], 
-                       auto_id: bool = True, manual_ids: List[str] = None) -> Dict[str, pd.DataFrame]:
+                           auto_id: bool = True, manual_ids: List[str] = None) -> Dict[str, pd.DataFrame]:
         """
         複数のGPXまたはCSVファイルを一度に読み込む
         
@@ -233,7 +233,7 @@ class SailingDataProcessor:
             # 並列処理用にタスクを準備
             tasks = []
             for idx, (filename, content, filetype) in enumerate(file_contents):
-                boat_id = None if auto_id else manual_ids[idx]
+                boat_id = manual_ids[idx] if not auto_id and manual_ids else filename.split('.')[0]
                 tasks.append((filename, content, filetype, boat_id, self.config['auto_optimize']))
             
             # マルチプロセッシングのためのワーカー数
@@ -258,11 +258,13 @@ class SailingDataProcessor:
         else:
             # 逐次処理
             for idx, (filename, content, filetype) in enumerate(file_contents):
-                boat_id = None if auto_id else manual_ids[idx]
-                print(f"Debug: ファイル {filename} 読み込み開始")
+                # 重要な修正: boat_idをここで明示的に設定
+                boat_id = manual_ids[idx] if not auto_id and manual_ids else filename.split('.')[0]
+                print(f"Debug: ファイル {filename} 読み込み開始 (boat_id: {boat_id})")
+                
                 df = self._load_file(filename, content, filetype, boat_id, self.config['auto_optimize'])
                 if df is not None:
-                    print(f"Debug: ファイル {filename} の読み込み成功 (行数: {len(df)})")
+                    print(f"Debug: ファイル {filename} の読み込み成功 (行数: {len(df)}, boat_id: {boat_id})")
                     # アルゴリズムの改善：タイムスタンプでソート
                     if 'timestamp' in df.columns:
                         df = df.sort_values('timestamp').reset_index(drop=True)
@@ -290,6 +292,8 @@ class SailingDataProcessor:
         
         # 結果を直接返す（boat_dataではなくresults_dictを返す）
         print(f"Debug: 戻り値の艇データ数: {len(results_dict)}")
+        if results_dict:
+            print(f"Debug: 読み込み結果のキー: {list(results_dict.keys())}")
         return results_dict
 
     def _load_file(self, filename: str, content: bytes, filetype: str, 
