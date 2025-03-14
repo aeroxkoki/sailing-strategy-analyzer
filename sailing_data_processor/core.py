@@ -495,6 +495,11 @@ class SailingDataProcessor:
         if df is None or df.empty:
             return df
             
+        # Categoricalデータ型をチェックし、必要に応じて変換する
+        for col in df.columns:
+            if pd.api.types.is_categorical_dtype(df[col]):
+                df[col] = df[col].astype(object)  # Categoricalを一般的なオブジェクト型に変換
+                
         # 必須カラムをチェック
         required_cols = ['timestamp', 'latitude', 'longitude']
         optional_cols = ['speed', 'bearing', 'distance', 'time_diff']
@@ -531,7 +536,12 @@ class SailingDataProcessor:
                             df.loc[idx, 'time_diff'] = total_time / points
         
         # 距離計算（メートル単位）
-        df['distance'] = 0.0
+        # 初期化を "0.0" にする前に、df['distance']がCategoricalでないか確認する
+        if 'distance' in df.columns and pd.api.types.is_categorical_dtype(df['distance']):
+            df['distance'] = df['distance'].astype(float)
+        else:
+            df['distance'] = 0.0
+            
         for i in range(1, len(df)):
             df.loc[i, 'distance'] = geodesic(
                 (df.loc[i-1, 'latitude'], df.loc[i-1, 'longitude']),
@@ -540,6 +550,9 @@ class SailingDataProcessor:
         
         # 速度計算（メートル/秒）- 既に速度がある場合は上書きしない
         if 'speed' not in df.columns or df['speed'].isnull().all():
+            # speedカラムがCategoricalでないことを確認
+            if 'speed' in df.columns and pd.api.types.is_categorical_dtype(df['speed']):
+                df['speed'] = df['speed'].astype(float)
             df['speed'] = np.where(df['time_diff'] > 0, df['distance'] / df['time_diff'], 0)
         
         # 異常値検出（速度ベースのアウトライアー検出）
@@ -561,7 +574,12 @@ class SailingDataProcessor:
         
         # 進行方向（ベアリング）の計算 - 既に方位がある場合は上書きしない
         if 'bearing' not in df.columns or df['bearing'].isnull().all():
-            df['bearing'] = 0.0
+            # bearingカラムがCategoricalでないことを確認
+            if 'bearing' in df.columns and pd.api.types.is_categorical_dtype(df['bearing']):
+                df['bearing'] = df['bearing'].astype(float)
+            else:
+                df['bearing'] = 0.0
+                
             for i in range(1, len(df)):
                 lat1, lon1 = math.radians(df.loc[i-1, 'latitude']), math.radians(df.loc[i-1, 'longitude'])
                 lat2, lon2 = math.radians(df.loc[i, 'latitude']), math.radians(df.loc[i, 'longitude'])
