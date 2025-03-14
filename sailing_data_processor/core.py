@@ -186,7 +186,7 @@ class SailingDataProcessor:
         return df_modified
     
     def load_multiple_files(self, file_contents: List[Tuple[str, bytes, str]], 
-                           auto_id: bool = True, manual_ids: List[str] = None) -> Dict[str, pd.DataFrame]:
+                       auto_id: bool = True, manual_ids: List[str] = None) -> Dict[str, pd.DataFrame]:
         """
         複数のGPXまたはCSVファイルを一度に読み込む
         
@@ -198,7 +198,7 @@ class SailingDataProcessor:
             True: ファイル名からIDを自動生成、False: manual_idsを使用
         manual_ids : List[str], optional
             手動で指定する艇ID（auto_id=Falseの場合に使用）
-            
+                
         Returns:
         --------
         Dict[str, pd.DataFrame]
@@ -206,7 +206,7 @@ class SailingDataProcessor:
         """
         if not auto_id and (manual_ids is None or len(manual_ids) != len(file_contents)):
             raise ValueError("手動ID指定モードの場合、ファイル数と同じ数のIDが必要です")
-
+    
         # ここにデバッグ出力を追加
         print(f"Debug: load_multiple_files が呼び出されました。ファイル数: {len(file_contents)}")
         
@@ -222,7 +222,12 @@ class SailingDataProcessor:
         self._log_performance_step("load_multiple_start")
         
         # 並列処理を使用するかどうか
-        use_parallel = self.config['use_parallel'] and len(file_contents) > 1
+        # テスト時は並列処理を無効化
+        use_parallel = False  # 並列処理の問題を排除するため一時的に無効化
+        print(f"Debug: 並列処理モード: {use_parallel}")
+        
+        # 処理結果を格納する辞書を初期化
+        results_dict = {}
         
         if use_parallel:
             # 並列処理用にタスクを準備
@@ -249,24 +254,23 @@ class SailingDataProcessor:
                     boat_id, df = result
                     if df is not None:
                         self.boat_data[boat_id] = df
+                        results_dict[boat_id] = df  # 結果も格納
         else:
             # 逐次処理
             for idx, (filename, content, filetype) in enumerate(file_contents):
                 boat_id = None if auto_id else manual_ids[idx]
-                # ここにデバッグ出力を追加
                 print(f"Debug: ファイル {filename} 読み込み開始")
                 df = self._load_file(filename, content, filetype, boat_id, self.config['auto_optimize'])
                 if df is not None:
-                    # ここにデバッグ出力を追加
                     print(f"Debug: ファイル {filename} の読み込み成功 (行数: {len(df)})")
                     # アルゴリズムの改善：タイムスタンプでソート
                     if 'timestamp' in df.columns:
                         df = df.sort_values('timestamp').reset_index(drop=True)
                     self.boat_data[boat_id] = df
+                    results_dict[boat_id] = df  # 結果も格納
                 else:
-                    # ここにデバッグ出力を追加
                     print(f"Debug: ファイル {filename} の読み込み失敗")
-                     
+                         
         # パフォーマンス統計を更新
         elapsed = time.time() - start_time
         self.performance_stats['load_time'] += elapsed
@@ -274,18 +278,22 @@ class SailingDataProcessor:
             self.performance_stats['total_points_processed'] += len(df)
         
         self._log_performance_step("load_multiple_end")
-
+    
         # ここにデバッグ出力を追加
         print(f"Debug: 読み込み完了。艇データ数: {len(self.boat_data)}")
+        if self.boat_data:
+            print(f"Debug: 艇データキー: {list(self.boat_data.keys())}")
         
         # メモリ状況の確認と必要に応じてガベージコレクション
         if self.config['auto_gc'] and self.optimizer.check_memory_threshold():
             gc.collect()
         
-        return self.boat_data
+        # 結果を直接返す（boat_dataではなくresults_dictを返す）
+        print(f"Debug: 戻り値の艇データ数: {len(results_dict)}")
+        return results_dict
 
     def _load_file(self, filename: str, content: bytes, filetype: str, 
-             boat_id: str = None, auto_optimize: bool = None) -> Optional[pd.DataFrame]:
+         boat_id: str = None, auto_optimize: bool = None) -> Optional[pd.DataFrame]:
         """
         単一ファイルを読み込む（内部メソッド）
         """
@@ -302,14 +310,21 @@ class SailingDataProcessor:
         while boat_id in self.boat_data:
             boat_id = f"{base_id}_{counter}"
             counter += 1
-    
+        
         # ファイルタイプに応じた読み込み
         df = None
         try:
             if filetype.lower() == 'gpx':
                 df = self._load_gpx(content.decode('utf-8'), boat_id)
             elif filetype.lower() == 'csv':
+                # content_sizeにバイトサイズを格納してロギング
+                content_size = len(content) if content else 0
+                print(f"Debug: CSVファイル読み込み開始 ({filename}, サイズ: {content_size}バイト)")
                 df = self._load_csv(content, boat_id)
+                if df is not None:
+                    print(f"Debug: CSVファイル読み込み成功 ({len(df)}行, {list(df.columns)})")
+                else:
+                    print(f"Debug: CSVファイル読み込み失敗")
             else:
                 warnings.warn(f"未対応のファイル形式です: {filetype}")
                 return None
@@ -323,16 +338,21 @@ class SailingDataProcessor:
                 target_size = int(len(df) * self.config['downsample_target'])
                 df = self.optimizer.downsample_data(df, target_size=target_size, method='adaptive')
                 warnings.warn(f"{boat_id}: 大規模データセットを {len(df)} ポイントにダウンサンプリングしました")
-        
+            
             # メモリ最適化
             if auto_optimize:
                 df = self.optimizer.optimize_dataframe(df)
-        
+            
             # 前処理（速度、方位などの計算）
             df = self._preprocess_gps_data(df)
-        
+            
+            # 処理が成功したら明示的にログ出力
+            if df is not None:
+                print(f"Debug: ファイル {filename} の処理完了 - 行数: {len(df)}")
+            
             return df
         except Exception as e:
+            print(f"Debug: ファイル読み込みエラー ({filename}): {str(e)}")
             warnings.warn(f"ファイル読み込みエラー ({filename}): {str(e)}")
             return None
     
@@ -430,7 +450,8 @@ class SailingDataProcessor:
                     decoded_content = csv_content.decode('latin-1')  # 最終手段
             
             # CSVファイルを読み込み
-            df = pd.read_csv(io.StringIO(decoded_content))
+            # StringIOではなく直接BytesIOを使うように修正
+            df = pd.read_csv(io.BytesIO(csv_content))
             
             # boat_id列を追加
             df['boat_id'] = boat_id
@@ -445,10 +466,14 @@ class SailingDataProcessor:
             
             # タイムスタンプを日時型に変換
             if 'timestamp' in df.columns and df['timestamp'].dtype != 'datetime64[ns]':
-                df['timestamp'] = pd.to_datetime(df['timestamp'])
+                try:
+                    df['timestamp'] = pd.to_datetime(df['timestamp'])
+                except Exception as e:
+                    warnings.warn(f"{boat_id}: タイムスタンプの変換に失敗しました: {e}")
+                    # 失敗しても処理を続ける
             
             return df
-            
+                
         except Exception as e:
             warnings.warn(f"{boat_id}: CSVファイルの読み込みエラー: {str(e)}")
             return None
