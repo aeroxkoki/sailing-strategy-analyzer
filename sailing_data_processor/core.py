@@ -1038,101 +1038,101 @@ class SailingDataProcessor:
         
         return df
     
-def process_multiple_boats(self, max_boats: int = None) -> Dict[str, Any]:
-    """
-    複数艇データの処理（パフォーマンス最適化済み）
-    
-    Parameters:
-    -----------
-    max_boats : int, optional
-        処理する最大艇数
+    def process_multiple_boats(self, max_boats: int = None) -> Dict[str, Any]:
+        """
+        複数艇データの処理（パフォーマンス最適化済み）
         
-    Returns:
-    --------
-    Dict[str, Any]
-        処理結果と統計情報
-    """
-    if not self.boat_data:
-        return {}
-    
-    if max_boats is None:
-        max_boats = self.max_boats
-    
-    # 開始時間を記録
-    start_time = time.time()
-    self._log_performance_step("process_multiple_start")
-    
-    # 処理結果を格納する辞書を初期化
-    processed_data = {}  # 明示的に処理結果辞書を初期化
-    
-    # 艇数制限（メモリ保護）
-    boat_ids = list(self.boat_data.keys())[:min(max_boats, len(self.boat_data))]
-    
-    # 並列処理を使用するかどうか
-    use_parallel = self.config['use_parallel'] and len(boat_ids) > 1
-    
-    if use_parallel:
-        # 並列処理用にタスクを準備
-        tasks = []
-        for boat_id in boat_ids:
-            tasks.append((boat_id, self.boat_data[boat_id], 30.0, 2.0))
+        Parameters:
+        -----------
+        max_boats : int, optional
+            処理する最大艇数
+            
+        Returns:
+        --------
+        Dict[str, Any]
+            処理結果と統計情報
+        """
+        if not self.boat_data:
+            return {}
         
-        # マルチプロセッシングのためのワーカー数
-        n_workers = min(len(tasks), self.optimizer.max_workers)
+        if max_boats is None:
+            max_boats = self.max_boats
         
-        # 並列処理の実行
-        results = []
-        with ThreadPoolExecutor(max_workers=n_workers) as executor:
-            # 部分関数を作成
-            func = partial(self._parallel_process_anomalies)
-            # プールで実行
-            futures = [executor.submit(func, task) for task in tasks]
-            results = [future.result() for future in futures if future.result() is not None]
+        # 開始時間を記録
+        start_time = time.time()
+        self._log_performance_step("process_multiple_start")
         
-        # 結果を統合
-        for result in results:
-            if result is not None:
-                boat_id, processed_df = result
+        # 処理結果を格納する辞書を初期化
+        processed_data = {}  # 明示的に処理結果辞書を初期化
+        
+        # 艇数制限（メモリ保護）
+        boat_ids = list(self.boat_data.keys())[:min(max_boats, len(self.boat_data))]
+        
+        # 並列処理を使用するかどうか
+        use_parallel = self.config['use_parallel'] and len(boat_ids) > 1
+        
+        if use_parallel:
+            # 並列処理用にタスクを準備
+            tasks = []
+            for boat_id in boat_ids:
+                tasks.append((boat_id, self.boat_data[boat_id], 30.0, 2.0))
+            
+            # マルチプロセッシングのためのワーカー数
+            n_workers = min(len(tasks), self.optimizer.max_workers)
+            
+            # 並列処理の実行
+            results = []
+            with ThreadPoolExecutor(max_workers=n_workers) as executor:
+                # 部分関数を作成
+                func = partial(self._parallel_process_anomalies)
+                # プールで実行
+                futures = [executor.submit(func, task) for task in tasks]
+                results = [future.result() for future in futures if future.result() is not None]
+            
+            # 結果を統合
+            for result in results:
+                if result is not None:
+                    boat_id, processed_df = result
+                    if processed_df is not None:
+                        self.processed_data[boat_id] = processed_df
+                        processed_data[boat_id] = processed_df  # 結果辞書にも追加
+        else:
+            # 逐次処理
+            for boat_id in boat_ids:
+                # detect_and_fix_gps_anomaliesの結果を変数に保存
+                processed_df = self.detect_and_fix_gps_anomalies(boat_id, 30.0, 2.0)
                 if processed_df is not None:
-                    self.processed_data[boat_id] = processed_df
-                    processed_data[boat_id] = processed_df  # 結果辞書にも追加
-    else:
-        # 逐次処理
-        for boat_id in boat_ids:
-            # detect_and_fix_gps_anomaliesの結果を変数に保存
-            processed_df = self.detect_and_fix_gps_anomalies(boat_id, 30.0, 2.0)
-            if processed_df is not None:
-                # self.processed_dataに追加するだけでなく、ローカル辞書にも追加
-                processed_data[boat_id] = processed_df
-    
-    # パフォーマンス統計を更新
-    elapsed = time.time() - start_time
-    self.performance_stats['process_time'] += elapsed
-    
-    self._log_performance_step("process_multiple_end")
-    
-    # 統計情報を作成
-    boat_stats = {}
-    # 処理されたデータを使用して統計情報を作成（self.processed_dataではなくprocessed_data）
-    for boat_id, df in processed_data.items():
-        stats = {
-            'duration_seconds': (df['timestamp'].max() - df['timestamp'].min()).total_seconds(),
-            'avg_speed_knots': (df['speed'].mean() * 1.94384),  # m/s → ノット
-            'max_speed_knots': (df['speed'].max() * 1.94384),
-            'distance_meters': df['distance'].sum() if 'distance' in df.columns else 0,
-            'points_count': len(df)
+                    # self.processed_dataに追加するだけでなく、ローカル辞書にも追加
+                    processed_data[boat_id] = processed_df
+        
+        # パフォーマンス統計を更新
+        elapsed = time.time() - start_time
+        self.performance_stats['process_time'] += elapsed
+        
+        self._log_performance_step("process_multiple_end")
+        
+        # 統計情報を作成
+        boat_stats = {}
+        # 処理されたデータを使用して統計情報を作成（self.processed_dataではなくprocessed_data）
+        for boat_id, df in processed_data.items():
+            stats = {
+                'duration_seconds': (df['timestamp'].max() - df['timestamp'].min()).total_seconds(),
+                'avg_speed_knots': (df['speed'].mean() * 1.94384),  # m/s → ノット
+                'max_speed_knots': (df['speed'].max() * 1.94384),
+                'distance_meters': df['distance'].sum() if 'distance' in df.columns else 0,
+                'points_count': len(df)
+            }
+            boat_stats[boat_id] = stats
+        
+        # メモリ状況の確認と必要に応じてガベージコレクション
+        if self.config['auto_gc'] and self.optimizer.check_memory_threshold():
+            gc.collect()
+        
+        # 明示的に処理データと統計情報を返す
+        return {
+            'data': processed_data,  # self.processed_dataではなくprocessed_dataを返す
+            'stats': boat_stats
         }
-        boat_stats[boat_id] = stats
-    
-    # メモリ状況の確認と必要に応じてガベージコレクション
-    if self.config['auto_gc'] and self.optimizer.check_memory_threshold():
-        gc.collect()
-    
-    # 明示的に処理データと統計情報を返す
-    return {
-        'data': processed_data,  # self.processed_dataではなくprocessed_dataを返す
-        'stats': boat_stats
-    }
     
     def _parallel_process_anomalies(self, args):
         """
