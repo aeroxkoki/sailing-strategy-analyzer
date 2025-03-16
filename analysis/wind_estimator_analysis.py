@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 import os
 import sys
+import math  # これが不足していました
 from datetime import datetime, timedelta
 import inspect
 import matplotlib.pyplot as plt
@@ -136,7 +137,7 @@ def create_sample_data():
     print("\n=== サンプルデータの作成 ===")
     
     # タイムスタンプの作成
-    timestamps = pd.date_range(start='2025-03-01 10:00:00', periods=200, freq='5S')
+    timestamps = pd.date_range(start='2025-03-01 10:00:00', periods=200, freq='5s')  # 'S'から's'に変更
     
     # 基本のコースパターン（風上/風下の往復）
     # 風向を270度（西風）と仮定
