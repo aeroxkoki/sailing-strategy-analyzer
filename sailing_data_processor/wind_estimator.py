@@ -72,8 +72,8 @@ class WindEstimator:
             warnings.warn(f"必要な列がありません: {missing_cols}")
             return None
         
-        # 方向の変化を計算（絶対値）
-        df['bearing_change'] = df['bearing'].diff().abs()
+        # 方向の変化を計算（循環角度を考慮）
+        df = self._calculate_bearing_change(df)
         
         # 大きな方向変化をタックまたはジャイブとして識別
         df['is_tack'] = df['bearing_change'] > min_tack_angle
