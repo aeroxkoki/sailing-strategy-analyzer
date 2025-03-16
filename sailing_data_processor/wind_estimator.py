@@ -446,7 +446,41 @@ class WindEstimator:
             self.wind_estimates[boat_id] = wind_df
             return wind_df
         else:
-            return None
+                return None
+    def _calculate_bearing_change(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        方位角の変化を計算（循環角度を考慮）
+        
+        Parameters:
+        -----------
+        df : pd.DataFrame
+            GPSデータフレーム（bearing列が必要）
+            
+        Returns:
+        --------
+        pd.DataFrame
+            bearing_change列が追加されたデータフレーム
+        """
+        # データフレームのコピーを作成
+        df_result = df.copy()
+        
+        # 循環角度を考慮した方位角変化を計算
+        bearing_change = []
+        bearing_change.append(0)  # 最初の点は変化なし
+        
+        for i in range(1, len(df)):
+            prev_bearing = df['bearing'].iloc[i-1]
+            curr_bearing = df['bearing'].iloc[i]
+            
+            # 最小角度差を計算（0-360度の循環を考慮）
+            diff = ((curr_bearing - prev_bearing + 180) % 360) - 180
+            bearing_change.append(abs(diff))
+        
+        # 計算した変化を列として追加
+        df_result['bearing_change'] = bearing_change
+        
+        return df_result
+
     
     def _weighted_angle_average(self, angles: List[float], weights: List[float]) -> float:
         """
