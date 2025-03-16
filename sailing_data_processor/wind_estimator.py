@@ -28,9 +28,9 @@ class WindEstimator:
         self.min_valid_points = 20    # 有効な風推定に必要な最小データポイント数
         
     def estimate_wind_from_single_boat(self, gps_data: pd.DataFrame, 
-                                       min_tack_angle: float = 30.0, 
-                                       boat_type: str = 'default', 
-                                       use_bayesian: bool = False) -> Optional[pd.DataFrame]:
+                                      min_tack_angle: float = 30.0, 
+                                      boat_type: str = 'default', 
+                                      use_bayesian: bool = False) -> Optional[pd.DataFrame]:
         """
         単一艇のGPSデータから風向風速を推定
         
@@ -72,30 +72,23 @@ class WindEstimator:
             warnings.warn(f"必要な列がありません: {missing_cols}")
             return None
         
-        # 方向の変化を計算（循環角度を考慮）
+        # 循環角度を考慮した方位変化を計算
         df = self._calculate_bearing_change(df)
         
-        # 大きな方向変化をタックまたはジャイブとして識別
-        df['is_tack'] = df['bearing_change'] > min_tack_angle
+        # === 改良: より堅牢なタック検出を使用 ===
+        # 改善されたタック検出メソッドを使用
+        tack_points_df = self._detect_tacks_improved(df, min_tack_angle)
         
-        # === 改良ポイント1: より堅牢なタック検出 ===
-        # 連続するタックを1つのイベントとしてグループ化
-        df['tack_group'] = (df['is_tack'] != df['is_tack'].shift()).cumsum()
-        tack_groups = df[df['is_tack']].groupby('tack_group')
-        
-        # 有意なタックのみを抽出（短すぎる角度変化を除外）
+        # 旧形式のタックデータ構造を作成（後方互換性のため）
         significant_tacks = []
-        for _, group in tack_groups:
-            if len(group) >= 2:  # 最低2ポイント以上のタック
-                total_angle_change = abs(group['bearing'].iloc[-1] - group['bearing'].iloc[0])
-                if total_angle_change > min_tack_angle:
-                    significant_tacks.append({
-                        'start_idx': group.index[0],
-                        'end_idx': group.index[-1],
-                        'angle_before': group['bearing'].iloc[0],
-                        'angle_after': group['bearing'].iloc[-1],
-                        'timestamp': group['timestamp'].iloc[0] if 'timestamp' in group.columns else None
-                    })
+        for idx, tack in tack_points_df.iterrows():
+            significant_tacks.append({
+                'start_idx': idx - 1 if idx > 0 else idx,  # タック直前のインデックス
+                'end_idx': idx,                            # タック時のインデックス
+                'angle_before': tack['bearing'] - tack['bearing_change'], # 概算の前方位
+                'angle_after': tack['bearing'],            # タック後の方位
+                'timestamp': tack['timestamp'] if 'timestamp' in tack else None
+            })
         
         # タック/ジャイブが少なすぎる場合は処理を中止
         if len(significant_tacks) < 2:
