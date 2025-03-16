@@ -523,6 +523,110 @@ class WindEstimator:
         return pd.DataFrame(tack_points)
     else:
         return pd.DataFrame()
+
+    def _calculate_wind_direction_from_tacks(self, upwind_bearings: List[float], 
+                                            boat_type: str = 'default') -> Tuple[float, float]:
+        """
+        タックデータから風向を推定する改善されたメソッド
+        
+        Parameters:
+        -----------
+        upwind_bearings : List[float]
+            風上レグの方位角リスト
+        boat_type : str
+            艇種識別子（VMG角度に影響）
+            
+        Returns:
+        --------
+        Tuple[float, float]
+            (推定風向, 信頼度スコア)
+        """
+        if not upwind_bearings or len(upwind_bearings) < 1:
+            return 0.0, 0.3  # データ不足の場合はデフォルト値
+        
+        # 艇種別のVMG最適角度を取得（デフォルトは45度）
+        vmg_angle = 45.0
+        if boat_type.lower() in self.boat_coefficients:
+            # 艇種データから仮の最適VMG角度を算出
+            # この値は通常30〜50度の範囲
+            upwind_ratio = self.boat_coefficients[boat_type.lower()]['upwind']
+            vmg_angle = min(50, max(30, 40 + upwind_ratio * 2))
+        
+        if len(upwind_bearings) >= 2:
+            # 複数の風上方向がある場合（より正確な推定が可能）
+            angle_diffs = []
+            
+            for i in range(len(upwind_bearings)):
+                for j in range(i+1, len(upwind_bearings)):
+                    # 2つの方位間の角度差（0-180度の範囲）
+                    angle1 = upwind_bearings[i]
+                    angle2 = upwind_bearings[j]
+                    diff = abs(angle1 - angle2)
+                    if diff > 180:
+                        diff = 360 - diff
+                    
+                    # 風向に対して対称的なタックペアほど角度差が大きくなる
+                    angle_diffs.append((angle1, angle2, diff))
+            
+            if not angle_diffs:
+                # 角度差が計算できなかった場合
+                return self._calculate_wind_direction_single_bearing(upwind_bearings[0], vmg_angle), 0.4
+            
+            # 最も角度差が大きいペアを見つける（おそらく反対タック）
+            max_diff_pair = max(angle_diffs, key=lambda x: x[2])
+            angle1, angle2, max_diff = max_diff_pair
+            
+            # 風向の推定信頼度
+            confidence = min(0.9, max(0.5, max_diff / 100))
+            
+            # 二等分線を計算（より正確な方法）
+            if max_diff > 60:  # 十分な角度差がある場合
+                # VMG最適角度を考慮した風向計算
+                # 二等分線を計算
+                if max_diff > 180:
+                    bisector = (min(angle1, angle2) + max_diff/2) % 360
+                else:
+                    middle = (angle1 + angle2) / 2
+                    if abs(angle1 - angle2) > 180:
+                        # 0度ラインを跨ぐ場合の補正
+                        middle = (middle + 180) % 360
+                    bisector = middle
+                
+                # VMG角度を考慮した風向計算
+                wind_direction = (bisector + 180) % 360
+                
+                # VMG角度による補正
+                correction = vmg_angle - 45  # 45度を基準とした補正
+                if max_diff < 70:  # 正面からの風の場合は補正を適用
+                    wind_direction = (wind_direction + correction) % 360
+                    
+                return wind_direction, confidence
+            else:
+                # 角度差が小さすぎる場合は単一の方位から計算
+                avg_bearing = sum(upwind_bearings) / len(upwind_bearings)
+                return self._calculate_wind_direction_single_bearing(avg_bearing, vmg_angle), 0.5
+        else:
+            # 単一の風上方向しかない場合
+            return self._calculate_wind_direction_single_bearing(upwind_bearings[0], vmg_angle), 0.4
+    
+    def _calculate_wind_direction_single_bearing(self, bearing: float, vmg_angle: float = 45.0) -> float:
+        """
+        単一の風上または風下方位から風向を推定
+        
+        Parameters:
+        -----------
+        bearing : float
+            艇の方位角
+        vmg_angle : float
+            想定されるVMG最適角度
+            
+        Returns:
+        --------
+        float
+            推定風向
+        """
+        # 風上走行時の想定VMG角度を考慮した風向計算
+        return (bearing + 180 - vmg_angle) % 360  # VMG角度を差し引いて風向を推定
     
     def _weighted_angle_average(self, angles: List[float], weights: List[float]) -> float:
         """
