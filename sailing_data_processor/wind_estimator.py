@@ -185,48 +185,31 @@ class WindEstimator:
         
         # 風上レグの方向から風向を推定
         if len(upwind_bearings) >= 2:
-            # 複数の風上方向がある場合
-            angle_diffs = []
-            for i in range(len(upwind_bearings)):
-                for j in range(i+1, len(upwind_bearings)):
-                    diff = abs(upwind_bearings[i] - upwind_bearings[j])
-                    if diff > 180:
-                        diff = 360 - diff
-                    angle_diffs.append((upwind_bearings[i], upwind_bearings[j], diff))
+            # 新しいメソッドを使用して風向と信頼度を計算
+            estimated_wind_direction, confidence_score = self._calculate_wind_direction_from_tacks(
+                upwind_bearings, boat_type)
+        elif len(upwind_bearings) == 1:
+            # 1つの風上方向から推定
+            vmg_angle = 45.0  # デフォルトのVMG最適角度
+            if boat_type.lower() in self.boat_coefficients:
+                upwind_ratio = self.boat_coefficients[boat_type.lower()]['upwind']
+                vmg_angle = min(50, max(30, 40 + upwind_ratio * 2))
             
-            # 最も角度差が大きいペアを見つける（おそらく反対タック）
-            if angle_diffs:
-                max_diff_pair = max(angle_diffs, key=lambda x: x[2])
-                angle1, angle2 = max_diff_pair[0], max_diff_pair[1]
-                
-                # 二等分線を計算
-                angle_diff = abs(angle1 - angle2)
-                if angle_diff > 180:
-                    angle_diff = 360 - angle_diff
-                    bisector = (min(angle1, angle2) + angle_diff/2) % 360
-                else:
-                    bisector = (min(angle1, angle2) + angle_diff/2)
-                
-                # 風向は二等分線の反対方向（180度反転）
-                estimated_wind_direction = (bisector + 180) % 360
-                confidence_score = 0.8  # 複数の風上レグがある場合は信頼度高
-        
-        # 単一の風上方向または風下方向から推定
-        if estimated_wind_direction is None:
-            if len(upwind_bearings) == 1:
-                # 1つの風上方向から推定（典型的な風上角度を考慮）
-                estimated_wind_direction = (upwind_bearings[0] + 180) % 360
-                confidence_score = 0.6  # 単一の風上レグなので中程度の信頼度
-            elif len(downwind_bearings) >= 1:
-                # 風下方向の反対が風向と仮定
-                estimated_wind_direction = (downwind_bearings[0] + 180) % 360
-                confidence_score = 0.5  # 風下のみからの推定は信頼度低め
-            else:
-                # データ不足のためデフォルト値を使用
-                boat_id = df['boat_id'].iloc[0] if 'boat_id' in df.columns else 'Unknown'
-                warnings.warn(f"Boat {boat_id}: 風向の推定に必要な十分なデータがありません。")
-                return None
-        
+            estimated_wind_direction = self._calculate_wind_direction_single_bearing(
+                upwind_bearings[0], vmg_angle)
+            confidence_score = 0.6  # 単一の風上レグなので中程度の信頼度
+        elif len(downwind_bearings) >= 1:
+            # 風下方向の反対が風向と仮定（風下用のVMG角度を考慮）
+            vmg_angle = 0.0  # 風下走行では直線的
+            estimated_wind_direction = self._calculate_wind_direction_single_bearing(
+                downwind_bearings[0], vmg_angle)
+            confidence_score = 0.5  # 風下のみからの推定は信頼度低め
+        else:
+            # データ不足のためデフォルト値を使用
+            boat_id = df['boat_id'].iloc[0] if 'boat_id' in df.columns else 'Unknown'
+            warnings.warn(f"Boat {boat_id}: 風向の推定に必要な十分なデータがありません。")
+            return None
+    
         # === 改良ポイント4: 風速の精度向上 ===
         # 艇種ごとの係数を設定
         # 使用する係数の決定
