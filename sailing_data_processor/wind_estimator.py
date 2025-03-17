@@ -459,53 +459,53 @@ class WindEstimator:
 
     def _detect_tacks_improved(self, df: pd.DataFrame, min_tack_angle: float = 30.0, 
                            window_size: int = 3) -> pd.DataFrame:
-    """
-    改良されたタック検出アルゴリズム
-    
-    Parameters:
-    -----------
-    df : pd.DataFrame
-        GPSデータフレーム (bearing_changeを含む)
-    min_tack_angle : float
-        タックとして検出する最小の方位変化角度
-    window_size : int
-        タック判定に使用する移動ウィンドウのサイズ
+        """
+        改良されたタック検出アルゴリズム
         
-    Returns:
-    --------
-    pd.DataFrame
-        検出されたタックポイントのデータフレーム
-    """
-    if df is None or len(df) < window_size * 2:
-        return pd.DataFrame()  # 十分なデータがない場合は空のデータフレームを返す
-    
-    # コピーを作成
-    df_copy = df.copy()
-    
-    # 移動ウィンドウでの方位変化の計算
-    # 単一フレームではなく、複数フレームにわたる変化を考慮
-    df_copy['bearing_change_sum'] = df_copy['bearing_change'].rolling(window=window_size, center=True).sum()
-    
-    # タックの検出（移動ウィンドウ内の累積変化がmin_tack_angleを超える場合）
-    df_copy['is_tack'] = df_copy['bearing_change_sum'] > min_tack_angle
-    
-    # 連続するタックを1つのイベントとしてグループ化
-    df_copy['tack_group'] = (df_copy['is_tack'] != df_copy['is_tack'].shift(1)).cumsum()
-    
-    # タックグループごとに最大の方位変化点を見つける
-    tack_points = []
-    
-    for group_id, group in df_copy[df_copy['is_tack']].groupby('tack_group'):
-        if len(group) > 0:
-            # グループ内で最大の方位変化がある点を代表点として選択
-            max_change_idx = group['bearing_change'].idxmax()
-            tack_points.append(df_copy.loc[max_change_idx].copy())
-    
-    # タックポイントのデータフレームを作成
-    if tack_points:
-        return pd.DataFrame(tack_points)
-    else:
-        return pd.DataFrame()
+        Parameters:
+        -----------
+        df : pd.DataFrame
+            GPSデータフレーム (bearing_changeを含む)
+        min_tack_angle : float
+            タックとして検出する最小の方位変化角度
+        window_size : int
+            タック判定に使用する移動ウィンドウのサイズ
+            
+        Returns:
+        --------
+        pd.DataFrame
+            検出されたタックポイントのデータフレーム
+        """
+        if df is None or len(df) < window_size * 2:
+            return pd.DataFrame()  # 十分なデータがない場合は空のデータフレームを返す
+        
+        # コピーを作成
+        df_copy = df.copy()
+        
+        # 移動ウィンドウでの方位変化の計算
+        # 単一フレームではなく、複数フレームにわたる変化を考慮
+        df_copy['bearing_change_sum'] = df_copy['bearing_change'].rolling(window=window_size, center=True).sum()
+        
+        # タックの検出（移動ウィンドウ内の累積変化がmin_tack_angleを超える場合）
+        df_copy['is_tack'] = df_copy['bearing_change_sum'] > min_tack_angle
+        
+        # 連続するタックを1つのイベントとしてグループ化
+        df_copy['tack_group'] = (df_copy['is_tack'] != df_copy['is_tack'].shift(1)).cumsum()
+        
+        # タックグループごとに最大の方位変化点を見つける
+        tack_points = []
+        
+        for group_id, group in df_copy[df_copy['is_tack']].groupby('tack_group'):
+            if len(group) > 0:
+                # グループ内で最大の方位変化がある点を代表点として選択
+                max_change_idx = group['bearing_change'].idxmax()
+                tack_points.append(df_copy.loc[max_change_idx].copy())
+        
+        # タックポイントのデータフレームを作成
+        if tack_points:
+            return pd.DataFrame(tack_points)
+        else:
+            return pd.DataFrame()
 
     def _calculate_wind_direction_from_tacks(self, upwind_bearings: List[float], 
                                             boat_type: str = 'default') -> Tuple[float, float]:
