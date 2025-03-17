@@ -155,6 +155,37 @@ class TestWindEstimator(unittest.TestCase):
             'boat_id': ['test_boat'] * points
         })
     
+    def _create_simple_tack_data(self):
+        """明確なタックを含むシンプルなGPSデータを作成"""
+        # 基準時刻
+        base_time = datetime(2024, 3, 1, 10, 0, 0)
+        
+        # 100ポイントのデータ生成
+        points = 100
+        timestamps = [base_time + timedelta(seconds=i*5) for i in range(points)]
+        
+        # 方位データ - 30度から150度へのタックを含む
+        bearings = [30] * 40 + list(range(30, 150, 3)) + [150] * 40
+        
+        # 緯度・経度データ（シンプルな直線）
+        base_lat, base_lon = 35.6, 139.7
+        lats = [base_lat + i * 0.0001 for i in range(points)]
+        lons = [base_lon + i * 0.0001 for i in range(points)]
+        
+        # 速度データ（タック時に減速）
+        speeds = [5.0] * 40 + [3.0] * len(range(30, 150, 3)) + [5.0] * 40
+        
+        df = pd.DataFrame({
+            'timestamp': timestamps,
+            'latitude': lats,
+            'longitude': lons,
+            'speed': np.array(speeds),
+            'bearing': bearings,
+            'boat_id': ['TestBoat'] * points
+        })
+        
+        return df
+    
     def test_tack_detection(self):
         """タック検出のテスト"""
         # タック検出用に方向変化を計算
@@ -328,6 +359,80 @@ class TestWindEstimator(unittest.TestCase):
         # グリッドのサイズ確認
         self.assertEqual(wind_field['lat_grid'].shape, (5, 5), "緯度グリッドのサイズが5x5ではありません")
         self.assertEqual(wind_field['wind_direction'].shape, (5, 5), "風向グリッドのサイズが5x5ではありません")
+    
+    def test_calculate_bearing_change(self):
+        """循環角度を考慮した方位変化計算のテスト"""
+        # テストデータ作成
+        test_data = pd.DataFrame({
+            'bearing': [0, 45, 90, 180, 270, 359, 1, 358],
+            'timestamp': [datetime(2024, 3, 1, 10, 0, i) for i in range(8)],
+            'latitude': [35.6] * 8,
+            'longitude': [139.7] * 8,
+            'speed': [5.0] * 8,
+            'boat_id': ['test_boat'] * 8
+        })
+        
+        # メソッドを実行
+        result = self.estimator._calculate_bearing_change(test_data)
+        
+        # 結果の検証
+        self.assertIn('bearing_change', result.columns, "bearing_change列が追加されていません")
+        
+        # 特定の角度変化の検証
+        # 359度から1度への変化は2度であるべき（0度線を跨ぐ例）
+        self.assertAlmostEqual(result.iloc[6]['bearing_change'], 2.0, delta=0.1, 
+                         msg="0度線を跨ぐ角度変化の計算が誤っています")
+        
+        # 90度から180度への変化は90度であるべき
+        self.assertAlmostEqual(result.iloc[3]['bearing_change'], 90.0, delta=0.1, 
+                         msg="通常の角度変化の計算が誤っています")
+
+    def test_detect_tacks_improved(self):
+        """改良版タック検出アルゴリズムのテスト"""
+        # テストデータ作成
+        df = self._create_simple_tack_data()
+        df = self.estimator._calculate_bearing_change(df)
+        
+        # 改良版タック検出メソッドを実行
+        min_tack_angle = 45.0
+        tack_points = self.estimator._detect_tacks_improved(df, min_tack_angle=min_tack_angle)
+        
+        # 結果の検証
+        self.assertIsNotNone(tack_points, "タック検出結果がNoneです")
+        self.assertGreater(len(tack_points), 0, "タックが検出されていません")
+        
+        # タック検出時の方位変化量を確認
+        detected_change = tack_points['bearing_change'].iloc[0]
+        self.assertGreater(detected_change, min_tack_angle, 
+                     f"検出されたタックの方位変化({detected_change})が閾値({min_tack_angle})より小さいです")
+
+    def test_wind_direction_calculation_methods(self):
+        """風向計算メソッドのテスト"""
+        # 複数の風上方位からの風向計算テスト
+        upwind_bearings = [30, 150]  # 約120度離れた風上方位
+        wind_dir, confidence = self.estimator._calculate_wind_direction_from_tacks(upwind_bearings)
+        
+        # 理論上の風向（風上方位の反対方向）
+        # 30度と150度の二等分線は90度付近、その反対は270度付近
+        self.assertTrue(240 <= wind_dir <= 300, 
+                  f"風向計算結果({wind_dir})が期待範囲(240-300度)外です")
+        
+        # 信頼度も検証
+        self.assertGreater(confidence, 0.5, "風向計算の信頼度が低すぎます")
+        
+        # 単一方位からの風向計算テスト
+        bearing = 45
+        vmg_angle = 40
+        
+        # 風向計算
+        wind_dir_single = self.estimator._calculate_wind_direction_single_bearing(bearing, vmg_angle)
+        
+        # 理論上の風向（方位+180-VMG角度）
+        theoretical_wind_dir = (bearing + 180 - vmg_angle) % 360
+        
+        # 検証
+        self.assertEqual(wind_dir_single, theoretical_wind_dir, 
+                   f"単一方位からの風向計算が不正確です: {wind_dir_single} != {theoretical_wind_dir}")
 
 
 if __name__ == '__main__':
