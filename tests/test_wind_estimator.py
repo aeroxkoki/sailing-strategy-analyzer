@@ -165,7 +165,9 @@ class TestWindEstimator(unittest.TestCase):
         timestamps = [base_time + timedelta(seconds=i*5) for i in range(points)]
         
         # 方位データ - 30度から150度へのタックを含む
-        bearings = [30] * 40 + list(range(30, 150, 3)) + [150] * 40
+        # 40ポイントは30度、20ポイントでタック操作（30度→150度）、40ポイントは150度
+        middle_points = 20
+        bearings = [30] * 40 + [int(30 + (150-30) * i / (middle_points-1)) for i in range(middle_points)] + [150] * 40
         
         # 緯度・経度データ（シンプルな直線）
         base_lat, base_lon = 35.6, 139.7
@@ -173,13 +175,20 @@ class TestWindEstimator(unittest.TestCase):
         lons = [base_lon + i * 0.0001 for i in range(points)]
         
         # 速度データ（タック時に減速）
-        speeds = [5.0] * 40 + [3.0] * len(range(30, 150, 3)) + [5.0] * 40
+        speeds = [5.0] * 40 + [3.0] * middle_points + [5.0] * 40
+        
+        # 配列の長さを再確認（全て100になるはず）
+        assert len(timestamps) == points
+        assert len(bearings) == points
+        assert len(lats) == points
+        assert len(lons) == points
+        assert len(speeds) == points
         
         df = pd.DataFrame({
             'timestamp': timestamps,
             'latitude': lats,
             'longitude': lons,
-            'speed': np.array(speeds),
+            'speed': np.array(speeds) * 0.514444,  # ノット→m/s変換
             'bearing': bearings,
             'boat_id': ['TestBoat'] * points
         })
