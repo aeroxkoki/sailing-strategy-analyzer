@@ -508,7 +508,7 @@ class WindEstimator:
             return pd.DataFrame()
 
     def _calculate_wind_direction_from_tacks(self, upwind_bearings: List[float], 
-                                            boat_type: str = 'default') -> Tuple[float, float]:
+                                           boat_type: str = 'default') -> Tuple[float, float]:
         """
         タックデータから風向を推定する改善されたメソッド
         
@@ -575,8 +575,8 @@ class WindEstimator:
                         middle = (middle + 180) % 360
                     bisector = middle
                 
-                # VMG角度を考慮した風向計算
-                wind_direction = (bisector + 180) % 360
+                # VMG角度を考慮した風向計算 - 180度誤差を修正
+                wind_direction = bisector  # 修正: 180度加算せず直接使用
                 
                 # VMG角度による補正
                 correction = vmg_angle - 45  # 45度を基準とした補正
@@ -609,7 +609,8 @@ class WindEstimator:
             推定風向
         """
         # 風上走行時の想定VMG角度を考慮した風向計算
-        return (bearing + 180 - vmg_angle) % 360  # VMG角度を差し引いて風向を推定
+        # 修正: 180度加算せず直接使用
+        return (bearing - vmg_angle) % 360  # VMG角度を差し引いて風向を推定
     
     def _weighted_angle_average(self, angles: List[float], weights: List[float]) -> float:
         """
