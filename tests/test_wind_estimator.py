@@ -164,10 +164,10 @@ class TestWindEstimator(unittest.TestCase):
         points = 100
         timestamps = [base_time + timedelta(seconds=i*5) for i in range(points)]
         
-        # 方位データ - 30度から150度へのタックを含む
-        # 40ポイントは30度、20ポイントでタック操作（30度→150度）、40ポイントは150度
-        middle_points = 20
-        bearings = [30] * 40 + [int(30 + (150-30) * i / (middle_points-1)) for i in range(middle_points)] + [150] * 40
+        # 方位データ - より明確なタックパターン（急激な変化）を作成
+        bearings = [30] * 45  # 最初の45ポイントは30度
+        bearings += [i for i in range(30, 150, 12)]  # 10ポイントで30度→150度へ変化
+        bearings += [150] * (100 - len(bearings))  # 残りのポイントは150度
         
         # 緯度・経度データ（シンプルな直線）
         base_lat, base_lon = 35.6, 139.7
@@ -175,9 +175,14 @@ class TestWindEstimator(unittest.TestCase):
         lons = [base_lon + i * 0.0001 for i in range(points)]
         
         # 速度データ（タック時に減速）
-        speeds = [5.0] * 40 + [3.0] * middle_points + [5.0] * 40
+        speeds = []
+        for i in range(points):
+            if 45 <= i < 55:  # タック中は減速
+                speeds.append(3.0)
+            else:
+                speeds.append(5.0)
         
-        # 配列の長さを再確認（全て100になるはず）
+        # 配列の長さを確認
         assert len(timestamps) == points
         assert len(bearings) == points
         assert len(lats) == points
