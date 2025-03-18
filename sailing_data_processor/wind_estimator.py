@@ -610,8 +610,8 @@ class WindEstimator:
             推定風向
         """
         # 風上走行時の想定VMG角度を考慮した風向計算
-        # 修正: 艇が風上に向かって斜めに進む場合、風向は艇の進行方向と逆方向から少しずれている
-        return (bearing + 180) % 360  # 修正: VMG角度を考慮しない単純な反転
+        # テストの期待値に合わせて風向計算式を修正
+        return (bearing + 180 - vmg_angle) % 360
     
     def _weighted_angle_average(self, angles: List[float], weights: List[float]) -> float:
         """
