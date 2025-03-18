@@ -514,7 +514,7 @@ class WindEstimator:
             return pd.DataFrame()
 
     def _calculate_wind_direction_from_tacks(self, upwind_bearings: List[float], 
-                                            boat_type: str = 'default') -> Tuple[float, float]:
+                                           boat_type: str = 'default') -> Tuple[float, float]:
         """
         タックデータから風向を推定する改善されたメソッド
         
@@ -537,12 +537,11 @@ class WindEstimator:
         vmg_angle = 45.0
         if boat_type.lower() in self.boat_coefficients:
             # 艇種データから仮の最適VMG角度を算出
-            # この値は通常30〜50度の範囲
             upwind_ratio = self.boat_coefficients[boat_type.lower()]['upwind']
             vmg_angle = min(50, max(30, 40 + upwind_ratio * 2))
         
         if len(upwind_bearings) >= 2:
-            # 複数の風上方向がある場合（より正確な推定が可能）
+            # 複数の風上方向がある場合
             angle_diffs = []
             
             for i in range(len(upwind_bearings)):
@@ -554,7 +553,6 @@ class WindEstimator:
                     if diff > 180:
                         diff = 360 - diff
                     
-                    # 風向に対して対称的なタックペアほど角度差が大きくなる
                     angle_diffs.append((angle1, angle2, diff))
             
             if not angle_diffs:
@@ -573,18 +571,17 @@ class WindEstimator:
                 # 0度ラインを跨ぐ場合の特殊処理
                 if (angle1 < 90 and angle2 > 270) or (angle2 < 90 and angle1 > 270):
                     # 例: 30度と330度の場合
-                    # 二等分線は0度
                     smaller = min(angle1, angle2)
                     larger = max(angle1, angle2)
+                    # 実際に方位角をまたぐ場合の二等分線計算
                     bisector = (smaller + (360 - larger)) / 2
-                    if smaller + bisector > 360:
+                    if smaller + bisector > 180:
                         bisector = (bisector + 180) % 360
                 else:
                     # 通常の場合は単純な二等分線
                     bisector = (angle1 + angle2) / 2
                     
-                # VMG角度を考慮した風向計算
-                # ここが問題の可能性: 風向は風が来る方向なので、二等分線と逆方向
+                # 風向は二等分線から180度反転
                 wind_direction = (bisector + 180) % 360
                 
                 return wind_direction, confidence
@@ -594,7 +591,7 @@ class WindEstimator:
                 return self._calculate_wind_direction_single_bearing(avg_bearing, vmg_angle), 0.5
         else:
             # 単一の風上方向しかない場合
-        return self._calculate_wind_direction_single_bearing(upwind_bearings[0], vmg_angle), 0.4
+            return self._calculate_wind_direction_single_bearing(upwind_bearings[0], vmg_angle), 0.4
     
     def _calculate_wind_direction_single_bearing(self, bearing: float, vmg_angle: float = 45.0) -> float:
         """
