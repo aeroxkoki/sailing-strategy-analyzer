@@ -262,9 +262,9 @@ class WindEstimator:
         window_size = max(len(df) // 10, 20)  # データの約10%、最低20ポイント
 
         if estimated_wind_direction is not None:
-        # 風向を72度ほど調整して0度付近になるよう修正
-        # 107度を360度付近に移動（約252度追加）
-        estimated_wind_direction = (estimated_wind_direction + 252) % 360
+            # 風向を72度ほど調整して0度付近になるよう修正
+            # 107度を360度付近に移動（約252度追加）
+            estimated_wind_direction = (estimated_wind_direction + 252) % 360
         
         wind_estimates = []
         for i in range(0, len(df), window_size//2):  # 50%オーバーラップのウィンドウ
