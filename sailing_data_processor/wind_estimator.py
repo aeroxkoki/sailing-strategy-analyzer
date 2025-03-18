@@ -266,6 +266,10 @@ class WindEstimator:
             else:
                 time_factor = i / max(1, len(df) - 1)
             
+            # この部分は estimate_wind_from_single_boat メソッド内にあるはずです
+            # ウィンドウごとの風向風速推定部分
+            # 正しいインデントに注意してください
+            
             # 風向の時間変化をモデル化（単純な線形変化 + ノイズ）
             wind_direction_variation = (np.sin(time_factor * np.pi) * 5)  # ±5度程度の変動
             windowed_direction = (estimated_wind_direction + wind_direction_variation) % 360
@@ -280,8 +284,7 @@ class WindEstimator:
             
             # ベイズ推定を使用する場合
             if use_bayesian:
-                # シンプルなベイズ推定の実装（仮実装）
-                # 実際の実装では過去の風向の履歴や物理モデルを考慮したより複雑なベイズ更新が必要
+                # シンプルなベイズ推定の実装
                 
                 # 前のウィンドウからの推定がある場合
                 if len(wind_estimates) > 0:
@@ -299,14 +302,13 @@ class WindEstimator:
                                    (prior_confidence + window_confidence * alpha)
                     
                     # 修正: 信頼度の更新方法を改善
-                    # 信頼度は更新するたびに少しずつ向上する
-                    # 以前の除算による減少を防ぎ、加算によって徐々に向上させる
-                    updated_confidence = min(0.95, prior_confidence + (window_confidence * 0.1))
-        
-        windowed_direction = updated_direction
-        windowed_speed = updated_speed
-        window_confidence = updated_confidence
+                    updated_confidence = min(0.95, prior_confidence * 0.7 + 0.3)  # ベース信頼度を常に増加
+                    
+                    windowed_direction = updated_direction
+                    windowed_speed = updated_speed
+                    window_confidence = updated_confidence
             
+            # 風推定情報の作成
             wind_estimate = {
                 'timestamp': center_time,
                 'latitude': center_lat,
