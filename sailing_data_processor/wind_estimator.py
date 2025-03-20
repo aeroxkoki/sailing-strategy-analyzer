@@ -1191,16 +1191,53 @@ class WindEstimator:
         pd.DataFrame or None
             推定された風向風速情報を含むDataFrame、推定失敗時はNone
         """
-        # データが有効かチェック
+        # 1. データの検証
         if gps_data is None or len(gps_data) < self.min_valid_points:
-            warnings.warn(f"有効なデータが不足しています。最低{self.min_valid_points}ポイント必要です。")
+            warnings.warn(f"有効なデータが不足しています")
             return None
         
-        # データ期間の確認
+        # 2. 必要列の存在チェック
+        required_cols = ['bearing', 'speed']
+        if not all(col in gps_data.columns for col in required_cols):
+            warnings.warn(f"必要な列がありません")
+            return None
+        
+        # 3. タイムスタンプ処理 - 安全に期間を計算
+        duration = 0
         if 'timestamp' in gps_data.columns:
-            duration = (gps_data['timestamp'].max() - gps_data['timestamp'].min()).total_seconds()
-            if duration < self.min_valid_duration:
-                warnings.warn(f"データ期間が短すぎます。最低{self.min_valid_duration}秒必要です。")
+            try:
+                # タイムスタンプ列のデータ型を確認
+                if pd.api.types.is_datetime64_any_dtype(gps_data['timestamp']):
+                    # すでにdatetime型の場合
+                    min_time = gps_data['timestamp'].min()
+                    max_time = gps_data['timestamp'].max()
+                    duration = (max_time - min_time).total_seconds()
+                else:
+                    # datetimeに変換
+                    timestamps = pd.to_datetime(gps_data['timestamp'], errors='coerce')
+                    if timestamps.notna().any():
+                        min_time = timestamps.min()
+                        max_time = timestamps.max()
+                        duration = (max_time - min_time).total_seconds()
+                    else:
+                        # 変換失敗時はポイント数からの推定
+                        duration = len(gps_data) * 5  # 5秒間隔を仮定
+            except Exception as e:
+                # エラー時はデータポイント数からの推定
+                warnings.warn(f"タイムスタンプ処理エラー: {e}")
+                duration = len(gps_data) * 5  # 5秒間隔を仮定
+        else:
+            # タイムスタンプ列がない場合
+            duration = len(gps_data) * 5  # 仮定の間隔
+        
+        # 残りのメソッドは既存のコードと同様...
+        
+        # 有効データ期間のチェック
+        if duration < self.min_valid_duration:
+            warnings.warn(f"データ期間が短すぎます: {duration}秒 < {self.min_valid_duration}秒")
+            if len(gps_data) > self.min_valid_points * 2:  # ポイント数が十分であれば継続
+                warnings.warn("ポイント数は十分なので処理を継続します")
+            else:
                 return None
         
         # データのコピーを作成
