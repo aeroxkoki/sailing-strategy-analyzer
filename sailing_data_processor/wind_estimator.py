@@ -342,61 +342,64 @@ class WindEstimator:
 
     def _evaluate_data_quality(self, df: pd.DataFrame) -> float:
         """
-        データの品質を評価
+        データの品質を評価（ノイズレベル、変動性、バランス）
         
         Parameters:
         -----------
         df : pd.DataFrame
-            GPSデータ
+            評価対象のGPSデータ
             
         Returns:
         --------
         float
-            品質スコア（0-1の範囲）
+            品質スコア（0-1）、高いほど良質
         """
-        # 十分なデータポイントがあるか
-        min_required_points = 10
-        points_score = min(1.0, len(df) / min_required_points)
-        
-        # 異常値や欠損値の検出
-        missing_data = df[['bearing', 'speed']].isna().any(axis=1).mean()
-        missing_score = 1.0 - missing_data
-        
-        # 速度の一貫性をチェック（極端な変化がないか）
-        if 'speed' in df.columns and len(df) > 2:
-            speed_std = df['speed'].std()
-            speed_mean = df['speed'].mean() if df['speed'].mean() > 0 else 1.0
-            speed_variation = speed_std / speed_mean
+        try:
+            # データのサイズ
+            data_size = len(df)
+            if data_size < 10:
+                return 0.3  # 少なすぎるデータは低品質
+                
+            # 欠損値の割合 - 問題のある行を修正
+            missing_data = 0.0
+            if 'bearing' in df.columns:
+                missing_bearing = df['bearing'].isna().mean()
+                missing_data += missing_bearing * 0.5
             
-            # 変動係数が0.5以下なら高品質（1.0）、1.0以上なら低品質（0.5）とする
-            speed_score = max(0.5, min(1.0, 1.5 - speed_variation))
-        else:
-            speed_score = 0.8  # デフォルト値
-        
-        # タイムスタンプの連続性をチェック（利用可能な場合）
-        if 'timestamp' in df.columns and len(df) > 2:
-            # 時間差分を計算
-            df_sorted = df.sort_values('timestamp')
-            time_diffs = df_sorted['timestamp'].diff().dt.total_seconds()
+            if 'speed' in df.columns:
+                missing_speed = df['speed'].isna().mean()
+                missing_data += missing_speed * 0.5
             
-            if not time_diffs.isna().all():
-                # 大きなギャップ（5秒以上）の比率
-                large_gaps = (time_diffs > 5).mean()
-                time_score = 1.0 - large_gaps
-            else:
-                time_score = 0.8  # デフォルト値
-        else:
-            time_score = 0.8  # デフォルト値
-        
-        # 総合スコアの計算（各要素に重み付け）
-        quality_score = (
-            0.3 * points_score +
-            0.2 * missing_score +
-            0.3 * speed_score +
-            0.2 * time_score
-        )
-        
-        return max(0.1, min(1.0, quality_score))  # 0.1-1.0の範囲に制限
+            if 'bearing' not in df.columns or 'speed' not in df.columns:
+                missing_data = 0.5  # 必要な列がない場合は中程度のペナルティ
+            
+            # 速度の変動係数（標準偏差/平均）- 安定性の指標
+            speed_cv = 1.0  # デフォルト値
+            if 'speed' in df.columns and df['speed'].mean() > 0:
+                speed_cv = df['speed'].std() / df['speed'].mean()
+                
+            # 方位角の標準偏差（安定したパターンでは低い）
+            bearing_stddev = 1.0  # デフォルト値
+            if 'bearing' in df.columns:
+                # 循環データ（角度）なので特別な処理が必要
+                sin_bearing = np.sin(np.radians(df['bearing']))
+                cos_bearing = np.cos(np.radians(df['bearing']))
+                
+                bearing_stddev = np.sqrt(sin_bearing.var() + cos_bearing.var())
+                
+            # 品質スコアの計算（各要素に重み付け）
+            quality_score = (
+                (1.0 - missing_data) * 0.4 +          # 欠損値の少なさ
+                (1.0 - min(1.0, speed_cv)) * 0.3 +    # 速度の安定性
+                (1.0 - min(1.0, bearing_stddev)) * 0.3  # 方位の安定性
+            )
+            
+            # 制限（0-1の範囲）
+            return max(0.1, min(1.0, quality_score))
+            
+        except Exception as e:
+            warnings.warn(f"データ品質評価エラー: {e}")
+            return 0.5  # エラー時は中間値を返す
 
     def _evaluate_bearing_range(self, df: pd.DataFrame) -> float:
         """
