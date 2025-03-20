@@ -443,7 +443,7 @@ class WindEstimator:
 
     def _estimate_from_speed_patterns(self, df: pd.DataFrame) -> Tuple[float, float]:
         """
-        速度パターン分析による風向推定
+        速度パターンに基づいて風向を推定
         
         Parameters:
         -----------
@@ -455,88 +455,84 @@ class WindEstimator:
         Tuple[float, float]
             (推定風向, 信頼度)
         """
-        if 'bearing' not in df.columns or 'speed' not in df.columns or len(df) < 5:
-            return 0.0, 0.0
+        # 必要なカラムがあるか確認
+        if 'bearing' not in df.columns or 'speed' not in df.columns:
+            return 0.0, 0.3  # 低信頼度の推定値
+            
+        # データを有効なエントリだけに絞り込み
+        valid_mask = df['bearing'].notna() & df['speed'].notna()
+        if not valid_mask.any():
+            return 0.0, 0.3  # 有効なデータがない場合
         
-        # 方位角を36ビン（10度刻み）に分類
-        num_bins = 36
-        bins = np.linspace(0, 360, num_bins + 1)
-        bin_centers = bins[:-1] + 5  # 各ビンの中央値
+        valid_indices = np.where(valid_mask)[0]
+        valid_df = df.iloc[valid_indices].copy()
         
-        # 各方位ビンごとの平均速度を計算
+        # 方位角を18度区切りの20ビンに分割（0-360度）
+        bin_size = 18  # 度
+        bins = np.arange(0, 361, bin_size)
+        
+        # 各方位ビンの平均速度を計算
         bin_speeds = []
+        bin_centers = []
         bin_counts = []
         
-        for i in range(num_bins):
-            # ビンの範囲（循環性を考慮）
-            lower = bins[i]
-            upper = bins[i+1]
+        for i in range(len(bins)-1):
+            # ビンの下限と上限
+            low = bins[i]
+            high = bins[i+1]
             
-            if lower <= upper:
-                mask = (df['bearing'] >= lower) & (df['bearing'] < upper)
-            else:  # 0度をまたぐ場合
-                mask = (df['bearing'] >= lower) | (df['bearing'] < upper)
-            
-            bin_data = df[mask]
-            bin_counts.append(len(bin_data))
-            
-            if len(bin_data) > 0:
-                bin_speeds.append(bin_data['speed'].mean())
+            # このビンに含まれる方位のインデックスを取得
+            if i == len(bins)-2:  # 最後のビン（360度含む）
+                bin_mask = (valid_df['bearing'] >= low) & (valid_df['bearing'] <= high)
             else:
-                bin_speeds.append(0)
+                bin_mask = (valid_df['bearing'] >= low) & (valid_df['bearing'] < high)
+            
+            # 安全なフィルタリング - .iloc[]を使用
+            bin_indices = np.where(bin_mask)[0]
+            if len(bin_indices) > 0:
+                bin_data = valid_df.iloc[bin_indices]
+                bin_speeds.append(bin_data['speed'].mean())
+                bin_centers.append((low + high) / 2)
+                bin_counts.append(len(bin_data))
+            else:
+                # データがない場合はスキップ
+                continue
         
-        # データポイントが十分あるビンのみを対象
-        valid_bins = np.array(bin_counts) >= max(2, len(df) * 0.05)
+        if not bin_speeds:
+            return 0.0, 0.3  # ビンごとの集計に失敗
         
-        if not any(valid_bins):
-            return 0.0, 0.0
+        # 最も遅いビンと最も速いビンを見つける
+        min_speed_idx = np.argmin(bin_speeds)
+        max_speed_idx = np.argmax(bin_speeds)
         
-        # 有効なビンの方位と速度
-        valid_bin_centers = bin_centers[valid_bins]
-        valid_bin_speeds = np.array(bin_speeds)[valid_bins]
+        min_speed = bin_speeds[min_speed_idx]
+        max_speed = bin_speeds[max_speed_idx]
         
-        # 最低速度と最高速度を特定
-        if len(valid_bin_speeds) < 2:
-            return 0.0, 0.0
+        # 速度変動が小さすぎる場合（一定の速度）
+        speed_range = max_speed - min_speed
+        if speed_range < 0.5 or max_speed < 1.0:
+            return 0.0, 0.3  # 速度パターンが不明瞭
         
-        min_speed_idx = np.argmin(valid_bin_speeds)
-        max_speed_idx = np.argmax(valid_bin_speeds)
+        # 最も遅い方向は風上、最も速い方向は風下と仮定
+        upwind_direction = bin_centers[min_speed_idx]
+        downwind_direction = bin_centers[max_speed_idx]
         
-        # 風上（最も遅い）と風下（最も速い）の方位
-        upwind_bearing = valid_bin_centers[min_speed_idx]
-        downwind_bearing = valid_bin_centers[max_speed_idx]
+        # 風向の計算（風上と風下の方向に基づく）
+        wind_direction = (upwind_direction + 180) % 360
         
-        # 風向の推定（風上の反対側）
-        wind_direction = (upwind_bearing + 180) % 360
+        # 風下方向と理論上の風下方向（風上の反対）の差
+        expected_downwind = (upwind_direction + 180) % 360
+        downwind_diff = abs(((downwind_direction - expected_downwind) + 180) % 360 - 180)
         
-        # 風上と風下の角度差（風向推定の信頼性指標）
-        angle_diff = abs((upwind_bearing - downwind_bearing + 180) % 360 - 180)
+        # 信頼度の計算（風上風下関係と速度差の明確さに基づく）
+        clarity = min(1.0, speed_range / 3.0)  # 速度差の明確さ（0-1）
+        # 風上風下の方向が反対（180度差）に近いほど高信頼度
+        direction_agreement = max(0, 1.0 - downwind_diff / 90.0)
         
-        # 角度差が約180度に近いほど信頼性が高い
-        angle_confidence = 1.0 - min(1.0, abs(angle_diff - 180) / 90)
-        
-        # 速度比に基づく信頼度
-        min_speed = valid_bin_speeds[min_speed_idx]
-        max_speed = valid_bin_speeds[max_speed_idx]
-        
-        # 最大速度が0に近い場合の対処
-        if max_speed < 0.1:
-            speed_ratio = 0
-        else:
-            speed_ratio = min_speed / max_speed
-        
-        # 風上と風下の速度比（理想的には0.5前後）
-        speed_confidence = 1.0 - min(1.0, abs(speed_ratio - 0.5) / 0.5)
-        
-        # 総合信頼度（角度差と速度比の両方を考慮）
-        confidence = 0.6 * angle_confidence + 0.4 * speed_confidence
-        
-        # 極めて少ないデータポイントの場合は信頼度を下げる
-        if len(df) < 20:
-            confidence *= max(0.5, len(df) / 20)
+        confidence = 0.4 + (clarity * 0.3) + (direction_agreement * 0.3)
         
         return wind_direction, confidence
-
+    
     def _get_polar_data(self, boat_type: str) -> Optional[pd.DataFrame]:
         """
         ポーラーデータを取得または生成する
@@ -646,7 +642,7 @@ class WindEstimator:
 
     def _estimate_using_polar(self, df: pd.DataFrame, boat_type: str) -> Tuple[float, float]:
         """
-        ポーラーデータを用いた風向推定
+        ポーラー性能カーブとの比較に基づいて風向を推定
         
         Parameters:
         -----------
@@ -660,76 +656,157 @@ class WindEstimator:
         Tuple[float, float]
             (推定風向, 信頼度)
         """
-        if 'bearing' not in df.columns or 'speed' not in df.columns or len(df) < 5:
-            return 0.0, 0.0
-        
         # ポーラーデータの取得
-        polar_data = self._get_polar_data(boat_type)
-        if polar_data is None or polar_data.empty:
-            return 0.0, 0.0
+        coefficients = self.boat_coefficients.get(boat_type.lower(), self.boat_coefficients['default'])
+        upwind_vmg_angle = self._calculate_optimal_vmg_angle(boat_type, True)
+        downwind_vmg_angle = self._calculate_optimal_vmg_angle(boat_type, False)
         
-        # 風速の仮定値（後でより正確に推定）
-        assumed_wind_speed = 10.0  # 仮の風速10ノット
+        # データを有効なエントリだけに絞り込み
+        # dropna() を使う代わりに安全なマスキングを使用
+        if 'bearing' not in df.columns or 'speed' not in df.columns:
+            return 0.0, 0.3  # 有効なデータがない場合
+            
+        valid_mask = df['bearing'].notna() & df['speed'].notna()
+        if not valid_mask.any():
+            return 0.0, 0.3  # 有効なデータがない場合
         
-        # 方位を36ビン（10度刻み）に分類
-        num_bins = 36
-        bins = np.linspace(0, 360, num_bins + 1)
-        bin_centers = bins[:-1] + 5  # 各ビンの中央値
+        valid_indices = np.where(valid_mask)[0]
+        valid_data = df.iloc[valid_indices].copy()
         
-        # 各方位ビンごとの平均速度を計算
-        bin_bearings = []
+        # 十分なデータポイントがない場合
+        if len(valid_data) < 10:
+            return 0.0, 0.3
+        
+        # 速度の標準化（最大値で割る）
+        max_speed = valid_data['speed'].max()
+        if max_speed <= 0:
+            return 0.0, 0.3
+            
+        valid_data['norm_speed'] = valid_data['speed'] / max_speed
+        
+        # 方位角をグループ化（10度間隔）
+        bin_size = 10
+        bins = np.arange(0, 361, bin_size)
+        
+        # 各方位ビンの標準化速度を計算
         bin_speeds = []
+        bin_centers = []
         bin_counts = []
         
-        # 有効なデータポイント
-        valid_data = df.dropna(subset=['bearing', 'speed'])
-        
-        for i in range(num_bins):
-            # ビンの範囲（循環性を考慮）
-            lower = bins[i]
-            upper = bins[i+1]
+        for i in range(len(bins)-1):
+            # ビンの下限と上限
+            low = bins[i]
+            high = bins[i+1]
             
-            if lower <= upper:
-                mask = (valid_data['bearing'] >= lower) & (valid_data['bearing'] < upper)
-            else:  # 0度をまたぐ場合
-                mask = (valid_data['bearing'] >= lower) | (valid_data['bearing'] < upper)
+            # このビンに含まれる方位のインデックスを安全に取得
+            if i == len(bins)-2:  # 最後のビン（360度含む）
+                bin_mask = (valid_data['bearing'] >= low) & (valid_data['bearing'] <= high)
+            else:
+                bin_mask = (valid_data['bearing'] >= low) & (valid_data['bearing'] < high)
             
-            bin_data = valid_data[mask]
-            bin_counts.append(len(bin_data))
+            bin_indices = np.where(bin_mask)[0]
+            if len(bin_indices) > 0:
+                bin_data = valid_data.iloc[bin_indices]
+                bin_speeds.append(bin_data['norm_speed'].mean())
+                bin_centers.append((low + high) / 2)
+                bin_counts.append(len(bin_data))
+        
+        if not bin_speeds:
+            return 0.0, 0.3
+        
+        # 2つの主要方向クラスターを見つける（K-means）
+        from sklearn.cluster import KMeans
+        
+        # 角度データを単位円上の点に変換（周期性を考慮）
+        X = np.column_stack([
+            np.cos(np.radians(bin_centers)) * np.array(bin_speeds),
+            np.sin(np.radians(bin_centers)) * np.array(bin_speeds)
+        ])
+        
+        # クラスタリング（K-means）
+        n_clusters = min(2, len(X))
+        if n_clusters < 2:
+            return 0.0, 0.3  # クラスタリングに十分なデータがない
             
-            if len(bin_data) > 0:
-                bin_bearings.append(bin_centers[i])
-                bin_speeds.append(bin_data['speed'].mean())
+        kmeans = KMeans(n_clusters=n_clusters, random_state=0).fit(X)
+        clusters = kmeans.labels_
         
-        if not bin_bearings:
-            return 0.0, 0.0
-        
-        # 各可能な風向に対してポーラー一致度を評価
-        best_score = -1
-        best_wind_direction = 0
-        
-        # 10度ごとに可能な風向をスキャン（36方位）
-        for test_wind_dir in bin_centers:
-            score = 0
-            valid_comparisons = 0
-            
-            for bearing, speed in zip(bin_bearings, bin_speeds):
-                # 相対風向（TWA）を計算
-                # TWAは艇の進行方向と風向の差（0-180度）
-                twa = abs((bearing - test_wind_dir + 180) % 360 - 180)
+        # クラスタごとの平均速度と方位
+        cluster_data = []
+        for i in range(n_clusters):
+            cluster_indices = np.where(clusters == i)[0]
+            if len(cluster_indices) > 0:
+                # このクラスタの方位と速度を取得
+                cluster_bearings = [bin_centers[j] for j in cluster_indices]
+                cluster_speeds = [bin_speeds[j] for j in cluster_indices]
                 
-                # ポーラーデータから期待される速度を取得
-                expected_speed = self._get_expected_speed_from_polar(
-                    polar_data, twa, assumed_wind_speed)
+                # 平均方位の計算（角度なので特別な処理）
+                sin_sum = sum(np.sin(np.radians(b)) for b in cluster_bearings)
+                cos_sum = sum(np.cos(np.radians(b)) for b in cluster_bearings)
+                avg_bearing = np.degrees(np.arctan2(sin_sum, cos_sum)) % 360
                 
-                if expected_speed > 0:
-                    # 観測速度と期待速度の比率
-                    speed_ratio = speed / expected_speed
-                    
-                    # 比率が1に近いほど良いスコア
-                    comparison_score = 1.0 - min(1.0, abs(speed_ratio - 1.0))
-                    score += comparison_score
-                    valid_comp
+                # 平均速度
+                avg_speed = sum(cluster_speeds) / len(cluster_speeds)
+                
+                cluster_data.append({
+                    'bearing': avg_bearing,
+                    'speed': avg_speed,
+                    'size': sum(bin_counts[j] for j in cluster_indices)
+                })
+        
+        if len(cluster_data) < 2:
+            return 0.0, 0.3  # 少なくとも2つのクラスターが必要
+        
+        # 速度に基づいてソート（遅い順）
+        cluster_data.sort(key=lambda x: x['speed'])
+        
+        # 最も遅いクラスタは風上、2番目に遅いクラスタは風下と仮定
+        upwind_cluster = cluster_data[0]
+        downwind_cluster = cluster_data[-1]
+        
+        # 風上クラスタの方位から風向を推定
+        upwind_bearing = upwind_cluster['bearing']
+        
+        # 風向の計算（風上の方位から）
+        wind_direction = (upwind_bearing + 180) % 360
+        
+        # 風下方向と理論上の風下方向（風上の反対）の差
+        expected_downwind = (upwind_bearing + 180) % 360
+        actual_downwind = downwind_cluster['bearing']
+        downwind_diff = abs(((actual_downwind - expected_downwind) + 180) % 360 - 180)
+        
+        # 信頼度の計算
+        speed_diff = downwind_cluster['speed'] - upwind_cluster['speed']
+        speed_clarity = min(1.0, speed_diff / 0.3)  # 速度差の明確さ
+        direction_agreement = max(0, 1.0 - downwind_diff / 90.0)  # 方向の一致度
+        
+        confidence = 0.5 + (speed_clarity * 0.25) + (direction_agreement * 0.25)
+        
+        # ポーラー性能と一致するかチェック（オプション）
+        # 実測速度とポーラー曲線の比較
+        
+        # 風上・風下VMG角度を用いた風向修正
+        upwind_direction = (wind_direction + upwind_vmg_angle) % 360
+        downwind_direction = (wind_direction + 180 - downwind_vmg_angle) % 360
+        
+        # 風上・風下のクラスタに近いかをチェック
+        upwind_match = min(
+            abs(((upwind_cluster['bearing'] - upwind_direction) + 180) % 360 - 180),
+            abs(((upwind_cluster['bearing'] - (upwind_direction + 60)) + 180) % 360 - 180),
+            abs(((upwind_cluster['bearing'] - (upwind_direction - 60)) + 180) % 360 - 180)
+        )
+        
+        downwind_match = min(
+            abs(((downwind_cluster['bearing'] - downwind_direction) + 180) % 360 - 180),
+            abs(((downwind_cluster['bearing'] - (downwind_direction + 30)) + 180) % 360 - 180),
+            abs(((downwind_cluster['bearing'] - (downwind_direction - 30)) + 180) % 360 - 180)
+        )
+        
+        # マッチの良さに基づいて信頼度を調整
+        polar_match = 1.0 - min(1.0, (upwind_match + downwind_match) / 90.0)
+        final_confidence = 0.7 * confidence + 0.3 * polar_match
+        
+        return wind_direction, final_confidence
 
     def _get_expected_speed_from_polar(self, polar_data: pd.DataFrame, twa: float, tws: float) -> float:
         """
