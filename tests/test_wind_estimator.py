@@ -422,32 +422,344 @@ class TestWindEstimator(unittest.TestCase):
 
     def test_wind_direction_calculation_methods(self):
         """風向計算メソッドのテスト"""
-        # 複数の風上方位からの風向計算テスト
-        upwind_bearings = [30, 150]  # 約120度離れた風上方位
-        wind_dir, confidence = self.estimator._calculate_wind_direction_from_tacks(upwind_bearings)
-        
-        # 理論上の風向（風上方位の反対方向）
-        # 30度と150度の二等分線は90度付近、その反対は270度付近
-        self.assertTrue(240 <= wind_dir <= 300, 
-                  f"風向計算結果({wind_dir})が期待範囲(240-300度)外です")
-        
-        # 信頼度も検証
-        self.assertGreater(confidence, 0.5, "風向計算の信頼度が低すぎます")
-        
-        # 単一方位からの風向計算テスト
-        bearing = 45
+        # 風上走行の場合
+        boat_bearing = 45
         vmg_angle = 40
-        
-        # 風向計算
-        wind_dir_single = self.estimator._calculate_wind_direction_single_bearing(bearing, vmg_angle)
+        wind_dir_upwind = self.estimator._calculate_wind_direction(boat_bearing, 'upwind', vmg_angle)
         
         # 理論上の風向（方位+180-VMG角度）
-        theoretical_wind_dir = (bearing + 180 - vmg_angle) % 360
+        theoretical_wind_dir = (boat_bearing + 180 - vmg_angle) % 360
         
         # 検証
-        self.assertEqual(wind_dir_single, theoretical_wind_dir, 
-                   f"単一方位からの風向計算が不正確です: {wind_dir_single} != {theoretical_wind_dir}")
+        self.assertEqual(wind_dir_upwind, theoretical_wind_dir, 
+                   f"風上走行での風向計算が不正確です: {wind_dir_upwind} != {theoretical_wind_dir}")
+        
+        # 風下走行の場合
+        boat_bearing = 180
+        wind_dir_downwind = self.estimator._calculate_wind_direction(boat_bearing, 'downwind')
+        
+        # 風下走行では、艇の進行方向が風向になる
+        self.assertEqual(wind_dir_downwind, boat_bearing, 
+                   f"風下走行での風向計算が不正確です: {wind_dir_downwind} != {boat_bearing}")
+        
+        # リーチング（横風）の場合
+        boat_bearing = 90
+        wind_dir_reaching = self.estimator._calculate_wind_direction(boat_bearing, 'reaching')
+        
+        # リーチングでは、艇の進行方向+90度が風向になる
+        theoretical_reaching_dir = (boat_bearing + 90) % 360
+        self.assertEqual(wind_dir_reaching, theoretical_reaching_dir, 
+                   f"リーチングでの風向計算が不正確です: {wind_dir_reaching} != {theoretical_reaching_dir}")
+        
+    def test_special_data_patterns(self):
+        """特殊データパターンのテスト"""
+        # クローズホールドのみのデータ（単一方向）
+        close_hauled_data = self._create_close_hauled_data()
+        close_hauled_result = self.estimator.estimate_wind_from_single_boat(
+            gps_data=close_hauled_data,
+            min_tack_angle=30.0,
+            boat_type='laser',
+            use_bayesian=False
+        )
+        
+        # 結果が存在することを確認
+        self.assertIsNotNone(close_hauled_result, "クローズホールドデータからの風向風速推定がNoneです")
+        
+        # リーチングのみのデータ（風向と直角）
+        reaching_data = self._create_reaching_data()
+        reaching_result = self.estimator.estimate_wind_from_single_boat(
+            gps_data=reaching_data,
+            min_tack_angle=30.0,
+            boat_type='laser',
+            use_bayesian=False
+        )
+        
+        # 結果が存在することを確認
+        self.assertIsNotNone(reaching_result, "リーチングデータからの風向風速推定がNoneです")
+        
+        # 非常に短いデータセット（最小有効データポイント付近）
+        min_points = self.estimator.min_valid_points
+        short_data = self.upwind_downwind_data.iloc[:min_points].copy()
+        short_result = self.estimator.estimate_wind_from_single_boat(
+            gps_data=short_data,
+            min_tack_angle=30.0,
+            boat_type='laser',
+            use_bayesian=False
+        )
+        
+        # 結果が存在することを確認
+        self.assertIsNotNone(short_result, "短いデータセットからの風向風速推定がNoneです")
+        
+        # 異常値を含むデータセット
+        noisy_data = self.upwind_downwind_data.copy()
+        # 速度に異常値を追加
+        noisy_data.loc[5, 'speed'] = noisy_data['speed'].max() * 3
+        # 方位に異常値を追加
+        noisy_data.loc[15, 'bearing'] = (noisy_data.loc[14, 'bearing'] + 180) % 360
+        
+        noisy_result = self.estimator.estimate_wind_from_single_boat(
+            gps_data=noisy_data,
+            min_tack_angle=30.0,
+            boat_type='laser',
+            use_bayesian=False
+        )
+        
+        # 結果が存在することを確認
+        self.assertIsNotNone(noisy_result, "異常値を含むデータからの風向風速推定がNoneです")
 
+    def _create_close_hauled_data(self):
+        """クローズホールドのみのサンプルデータを作成"""
+        # 基本情報
+        base_lat, base_lon = 35.6, 139.7
+        points = 100
+        timestamps = [datetime(2024, 3, 1, 10, 0, 0) + timedelta(seconds=i*5) for i in range(points)]
+        
+        # クローズホールド（風上に対して約40度）- 一定方向
+        bearings = [40] * points
+        speeds = [5.0 + np.random.normal(0, 0.5) for _ in range(points)]  # 標準的な風上の速度
+        
+        # 座標を計算
+        lats = [base_lat]
+        lons = [base_lon]
+        
+        for i in range(1, points):
+            # 前の位置から新しい位置を計算
+            dist = speeds[i-1] * 5 * 0.514444  # 5秒分の距離（m/s）
+            dx = dist * math.sin(math.radians(bearings[i-1]))
+            dy = dist * math.cos(math.radians(bearings[i-1]))
+            
+            # メートルを度に変換（近似）
+            dlat = dy / 111000
+            dlon = dx / (111000 * math.cos(math.radians(lats[-1])))
+            
+            lats.append(lats[-1] + dlat)
+            lons.append(lons[-1] + dlon)
+        
+        # DataFrameに変換
+        return pd.DataFrame({
+            'timestamp': timestamps,
+            'latitude': lats,
+            'longitude': lons,
+            'bearing': bearings,
+            'speed': np.array(speeds) * 0.514444,  # ノット→m/s変換
+            'boat_id': ['test_boat'] * points
+        })
+    
+    def _create_reaching_data(self):
+        """リーチング（横風）のみのサンプルデータを作成"""
+        # 基本情報
+        base_lat, base_lon = 35.6, 139.7
+        points = 100
+        timestamps = [datetime(2024, 3, 1, 10, 0, 0) + timedelta(seconds=i*5) for i in range(points)]
+        
+        # リーチング（風に対して約90度）- 一定方向
+        bearings = [90] * points
+        speeds = [7.0 + np.random.normal(0, 0.5) for _ in range(points)]  # 標準的なリーチングの速度
+        
+        # 座標を計算
+        lats = [base_lat]
+        lons = [base_lon]
+        
+        for i in range(1, points):
+            # 前の位置から新しい位置を計算
+            dist = speeds[i-1] * 5 * 0.514444  # 5秒分の距離（m/s）
+            dx = dist * math.sin(math.radians(bearings[i-1]))
+            dy = dist * math.cos(math.radians(bearings[i-1]))
+            
+            # メートルを度に変換（近似）
+            dlat = dy / 111000
+            dlon = dx / (111000 * math.cos(math.radians(lats[-1])))
+            
+            lats.append(lats[-1] + dlat)
+            lons.append(lons[-1] + dlon)
+        
+        # DataFrameに変換
+        return pd.DataFrame({
+            'timestamp': timestamps,
+            'latitude': lats,
+            'longitude': lons,
+            'bearing': bearings,
+            'speed': np.array(speeds) * 0.514444,  # ノット→m/s変換
+            'boat_id': ['test_boat'] * points
+        })
+
+    def test_hybrid_estimation_strategy(self):
+        """リファクタリングで追加された複数推定手法の統合機能をテスト"""
+        # データセットの準備
+        test_data = self.upwind_downwind_data.copy()
+        
+        # 基本の推定
+        result_basic = self.estimator.estimate_wind_from_single_boat(
+            gps_data=test_data,
+            min_tack_angle=30.0,
+            boat_type='laser',
+            use_bayesian=False
+        )
+        
+        # ベイズ推定を使用した場合
+        result_bayesian = self.estimator.estimate_wind_from_single_boat(
+            gps_data=test_data,
+            min_tack_angle=30.0,
+            boat_type='laser',
+            use_bayesian=True
+        )
+        
+        # 結果が存在することを確認
+        self.assertIsNotNone(result_basic, "基本推定の結果がNoneです")
+        self.assertIsNotNone(result_bayesian, "ベイズ推定の結果がNoneです")
+        
+        # 信頼度の比較
+        avg_confidence_basic = result_basic['confidence'].mean()
+        avg_confidence_bayesian = result_bayesian['confidence'].mean()
+        
+        # ベイズ推定の方が信頼度が高くなる傾向がある
+        self.assertGreaterEqual(
+            avg_confidence_bayesian, 
+            avg_confidence_basic * 0.9,  # 10%の許容誤差
+            "ベイズ推定の信頼度が低すぎます"
+        )
+        
+        # 異なる艇種での推定結果の比較
+        result_different_boat = self.estimator.estimate_wind_from_single_boat(
+            gps_data=test_data,
+            min_tack_angle=30.0,
+            boat_type='49er',  # 高性能スキフ
+            use_bayesian=False
+        )
+        
+        # 風向は艇種に依存せず、ほぼ同じになるはず
+        self.assertAlmostEqual(
+            result_basic['wind_direction'].mean(),
+            result_different_boat['wind_direction'].mean(),
+            delta=15,  # 15度の許容誤差
+            msg="異なる艇種で風向の推定結果が大きく異なります"
+        )
+        
+        # 風速は艇種の係数によって変わる可能性がある
+        # 49erは高性能なのでlesser係数が小さく、風速推定が小さくなる傾向がある
+        coef_laser = self.estimator.boat_coefficients['laser']['upwind']
+        coef_49er = self.estimator.boat_coefficients['49er']['upwind']
+        
+        if coef_laser > coef_49er:
+            # 係数の比率に応じた風速の比率を期待
+            expected_ratio = coef_49er / coef_laser
+            actual_ratio = result_different_boat['wind_speed_knots'].mean() / result_basic['wind_speed_knots'].mean()
+            
+            self.assertAlmostEqual(
+                actual_ratio,
+                expected_ratio,
+                delta=0.2,  # 20%の許容誤差
+                msg="異なる艇種の係数比率と風速比率が一致しません"
+            )
+
+def test_real_world_data_accuracy(self):
+    """実データを用いた精度検証のテスト"""
+    # 実際のデータを持っていないので、既知の風向風速でシミュレーションデータを作成
+    known_wind_direction = 0  # 北からの風（0度）
+    known_wind_speed_knots = 10.0  # 10ノット
+    
+    # 風上・風下レグを含むシミュレーションデータを作成
+    simulated_data = self._create_simulated_data_with_known_wind(
+        wind_direction=known_wind_direction,
+        wind_speed_knots=known_wind_speed_knots
+    )
+    
+    # 風向風速を推定
+    result = self.estimator.estimate_wind_from_single_boat(
+        gps_data=simulated_data,
+        min_tack_angle=30.0,
+        boat_type='laser',
+        use_bayesian=True
+    )
+    
+    # 結果が存在することを確認
+    self.assertIsNotNone(result, "シミュレーションデータからの風向風速推定がNoneです")
+    
+    # 風向の平均絶対誤差を計算
+    wind_dir_mae = np.mean(
+        np.abs((result['wind_direction'] - known_wind_direction + 180) % 360 - 180)
+    )
+    
+    # 風速の平均絶対誤差を計算
+    wind_speed_mae = np.mean(np.abs(result['wind_speed_knots'] - known_wind_speed_knots))
+    
+    # 許容誤差内にあることを検証
+    self.assertLess(wind_dir_mae, 30, f"風向の平均絶対誤差が大きすぎます: {wind_dir_mae}度")
+    self.assertLess(wind_speed_mae, 3, f"風速の平均絶対誤差が大きすぎます: {wind_speed_mae}ノット")
+
+    def _create_simulated_data_with_known_wind(self, wind_direction, wind_speed_knots):
+        """
+        既知の風向風速でシミュレーションデータを作成
+        
+        Parameters:
+        -----------
+        wind_direction : float
+            既知の風向（度）
+        wind_speed_knots : float
+            既知の風速（ノット）
+            
+        Returns:
+        --------
+        pd.DataFrame
+            シミュレーションGPSデータ
+        """
+        # 基本情報
+        base_lat, base_lon = 35.6, 139.7
+        points = 200
+        timestamps = [datetime(2024, 3, 1, 10, 0, 0) + timedelta(seconds=i*5) for i in range(points)]
+        
+        # 風上レグの方位（風向に対して45度）
+        upwind_bearing = (wind_direction + 45) % 360
+        # 風下レグの方位（風向に対して180度）
+        downwind_bearing = (wind_direction + 180) % 360
+        
+        # 風上・風下レグを組み合わせる
+        bearings = []
+        speeds = []
+        
+        # 係数（レーザー艇を想定）
+        upwind_coef = self.estimator.boat_coefficients['laser']['upwind']
+        downwind_coef = self.estimator.boat_coefficients['laser']['downwind']
+        
+        # 風上風下レグを交互に配置
+        for i in range(points):
+            if i % 100 < 50:  # 風上レグ
+                bearings.append(upwind_bearing)
+                # 風上の艇速 = 風速 / 風上係数
+                speed = wind_speed_knots / upwind_coef
+                speeds.append(speed + np.random.normal(0, 0.5))  # ノイズを追加
+            else:  # 風下レグ
+                bearings.append(downwind_bearing)
+                # 風下の艇速 = 風速 / 風下係数
+                speed = wind_speed_knots / downwind_coef
+                speeds.append(speed + np.random.normal(0, 0.5))  # ノイズを追加
+        
+        # 座標を計算
+        lats = [base_lat]
+        lons = [base_lon]
+        
+        for i in range(1, points):
+            # 前の位置から新しい位置を計算
+            dist = speeds[i-1] * 5 * 0.514444  # 5秒分の距離（m/s）
+            dx = dist * math.sin(math.radians(bearings[i-1]))
+            dy = dist * math.cos(math.radians(bearings[i-1]))
+            
+            # メートルを度に変換（近似）
+            dlat = dy / 111000
+            dlon = dx / (111000 * math.cos(math.radians(lats[-1])))
+            
+            lats.append(lats[-1] + dlat)
+            lons.append(lons[-1] + dlon)
+        
+        # DataFrameに変換
+        return pd.DataFrame({
+            'timestamp': timestamps,
+            'latitude': lats,
+            'longitude': lons,
+            'bearing': bearings,
+            'speed': np.array(speeds) * 0.514444,  # ノット→m/s変換
+            'boat_id': ['sim_boat'] * points
+    })
 
 if __name__ == '__main__':
     unittest.main()
