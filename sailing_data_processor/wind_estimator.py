@@ -7,7 +7,27 @@ from datetime import datetime, timedelta
 import math
 
 class WindEstimator:
-    """風向風速推定クラス - GPSデータから風向風速を推定する機能を提供"""
+    """
+    風向風速推定クラス - GPSデータから風向風速を推定する機能を提供
+    
+    このクラスは、セーリング艇のGPSデータ（位置、速度、方位など）から
+    風向風速を推定するための様々なアルゴリズムを実装しています。
+    
+    重要な概念：
+    
+    - 風向（Wind Direction）：風が吹いてくる方向を示す角度（0-360度）。
+      例えば、北風（0度）は北から南へ吹く風、東風（90度）は東から西へ吹く風。
+      
+    - 風上（Upwind）：風が吹いてくる方向に向かうこと。艇の進行方向と風向の
+      相対角度が±90度以内の場合。
+      
+    - 風下（Downwind）：風に背を向けて進むこと。艇の進行方向と風向の
+      相対角度が±90度を超える場合。
+      
+    - タック（Tack）：風上走行中に風向をまたいで方向転換する操作。
+    
+    - ジャイブ（Jibe/Gybe）：風下走行中に風向をまたいで方向転換する操作。
+    """
     
     def __init__(self):
         """初期化"""
@@ -286,59 +306,64 @@ class WindEstimator:
         """
         ハイブリッド風向推定アルゴリズム - 複数アプローチの組み合わせ
         
+        GPSデータから複数の手法（速度パターン、ポーラーデータ、最適VMG角度）を
+        組み合わせて風向を推定します。各手法の結果を信頼度に基づいて統合し、
+        より正確で堅牢な風向推定を実現します。
+        
         Parameters:
         -----------
         df : pd.DataFrame
             GPSデータ（少なくとも'bearing'と'speed'列が必要）
         boat_type : str
             艇種識別子
-            
+                
         Returns:
         --------
         Tuple[float, float]
-            (推定風向（度、0-360の範囲）, 信頼度スコア(0-1の範囲))
+            (推定風向（度、0-360の範囲、風が吹いてくる方向）, 信頼度スコア(0-1の範囲))
         """
-        if df is None or len(df) < 10:  # 最低限のデータポイント要件
+    
+            if df is None or len(df) < 10:  # 最低限のデータポイント要件
+                return 0.0, 0.0
+            
+            # データ品質の評価
+            data_quality = self._evaluate_data_quality(df)
+            
+            # 方位の分布範囲を評価
+            bearing_range = self._evaluate_bearing_range(df)
+            
+            # 結果を格納する辞書
+            estimates = {}
+            
+            # 1. 速度パターン分析による推定
+            direction_speed, confidence_speed = self._estimate_from_speed_patterns(df)
+            estimates['speed_patterns'] = (direction_speed, confidence_speed)
+            
+            # 2. ポーラーデータを用いた推定（データが利用可能な場合）
+            direction_polar, confidence_polar = self._estimate_using_polar(df, boat_type)
+            if confidence_polar > 0:
+                estimates['polar_data'] = (direction_polar, confidence_polar)
+            
+            # 3. 最適VMG角度に基づく推定
+            direction_vmg, confidence_vmg = self._estimate_from_optimal_vmg(df, boat_type)
+            estimates['optimal_vmg'] = (direction_vmg, confidence_vmg)
+            
+            # 各推定結果の信頼度に応じた重み付け平均を計算
+            if estimates:
+                final_direction = self._weighted_angle_consensus(estimates)
+                
+                # 最終的な信頼度は各推定法の最大信頼度と平均信頼度の加重平均
+                max_confidence = max([conf for _, conf in estimates.values()])
+                avg_confidence = sum([conf for _, conf in estimates.values()]) / len(estimates)
+                final_confidence = 0.7 * max_confidence + 0.3 * avg_confidence
+                
+                # データ品質による信頼度の調整
+                final_confidence = final_confidence * data_quality
+                
+                return final_direction, final_confidence
+            
+            # 推定失敗
             return 0.0, 0.0
-        
-        # データ品質の評価
-        data_quality = self._evaluate_data_quality(df)
-        
-        # 方位の分布範囲を評価
-        bearing_range = self._evaluate_bearing_range(df)
-        
-        # 結果を格納する辞書
-        estimates = {}
-        
-        # 1. 速度パターン分析による推定
-        direction_speed, confidence_speed = self._estimate_from_speed_patterns(df)
-        estimates['speed_patterns'] = (direction_speed, confidence_speed)
-        
-        # 2. ポーラーデータを用いた推定（データが利用可能な場合）
-        direction_polar, confidence_polar = self._estimate_using_polar(df, boat_type)
-        if confidence_polar > 0:
-            estimates['polar_data'] = (direction_polar, confidence_polar)
-        
-        # 3. 最適VMG角度に基づく推定
-        direction_vmg, confidence_vmg = self._estimate_from_optimal_vmg(df, boat_type)
-        estimates['optimal_vmg'] = (direction_vmg, confidence_vmg)
-        
-        # 各推定結果の信頼度に応じた重み付け平均を計算
-        if estimates:
-            final_direction = self._weighted_angle_consensus(estimates)
-            
-            # 最終的な信頼度は各推定法の最大信頼度と平均信頼度の加重平均
-            max_confidence = max([conf for _, conf in estimates.values()])
-            avg_confidence = sum([conf for _, conf in estimates.values()]) / len(estimates)
-            final_confidence = 0.7 * max_confidence + 0.3 * avg_confidence
-            
-            # データ品質による信頼度の調整
-            final_confidence = final_confidence * data_quality
-            
-            return final_direction, final_confidence
-        
-        # 推定失敗
-        return 0.0, 0.0
 
 
 
@@ -518,34 +543,32 @@ class WindEstimator:
         # 有効なタックが検出されない場合
         return 0.0, 0.2
     
-    def _calculate_bisector(self, angle1, angle2):
+    def _calculate_bisector(self, angle1: float, angle2: float) -> float:
         """
-        2つの角度の二等分線を計算
+        2つの角度の二等分線を計算する（角度の循環性を考慮）
         
         Parameters:
         -----------
-        angle1, angle2 : float
-            二等分する2つの角度（度）
+        angle1 : float
+            1つ目の角度（度、0-360）
+        angle2 : float
+            2つ目の角度（度、0-360）
             
         Returns:
         --------
         float
-            二等分線の角度（0-360度）
+            二等分線の角度（度、0-360）
         """
-        # sin/cosコンポーネントに変換
-        sin1, cos1 = np.sin(np.radians(angle1)), np.cos(np.radians(angle1))
-        sin2, cos2 = np.sin(np.radians(angle2)), np.cos(np.radians(angle2))
+        # 正弦・余弦成分の平均を使用して二等分線を計算
+        sin_avg = (np.sin(np.radians(angle1)) + np.sin(np.radians(angle2))) / 2
+        cos_avg = (np.cos(np.radians(angle1)) + np.cos(np.radians(angle2))) / 2
         
-        # ベクトル和を計算
-        sin_sum = sin1 + sin2
-        cos_sum = cos1 + cos2
+        # 平均角度を計算
+        bisector = np.degrees(np.arctan2(sin_avg, cos_avg)) % 360
         
-        # 合成角度を計算
-        if sin_sum == 0 and cos_sum == 0:
-            # 完全に反対方向の場合、任意の二等分線を返す
-            return (angle1 + 90) % 360
-        
-        bisector = np.degrees(np.arctan2(sin_sum, cos_sum)) % 360
+        # 角度差が180度を超える場合（0度線を跨ぐ場合）の補正
+        if abs(((angle1 - angle2) + 180) % 360 - 180) > 90:
+            bisector = (bisector + 180) % 360
         
         return bisector
 
@@ -1028,6 +1051,10 @@ class WindEstimator:
         """
         クローズホールドの最適角度に基づく風向推定
         
+        艇の航行方位パターンからタック角度を分析し、風上方向と最適VMG角度を
+        考慮して風向を推定します。タック時の方位変化は通常、最適風上角度の
+        2倍程度になるため、これを利用して風向を逆算します。
+        
         Parameters:
         -----------
         df : pd.DataFrame
@@ -1038,7 +1065,7 @@ class WindEstimator:
         Returns:
         --------
         Tuple[float, float]
-            (推定風向, 信頼度)
+            (推定風向（度、0-360、風が吹いてくる方向）, 信頼度)
         """
         if 'bearing' not in df.columns or len(df) < 5:
             return 0.0, 0.0
@@ -1094,15 +1121,12 @@ class WindEstimator:
                 
                 # クラスタ間の角度差が70-110度なら対称的なタックと判断
                 if 70 <= angle_diff <= 110:
-                    # 二等分線を計算（風上方向）
-                    bisector = (top_cluster_angles[0] + top_cluster_angles[1]) / 2
-                    if abs(top_cluster_angles[0] - top_cluster_angles[1]) > 180:
-                        # 0度線を跨ぐ場合の補正
-                        bisector = (bisector + 180) % 360
+                    # 二等分線を計算（風上方向）- ヘルパーメソッドを使用
+                    bisector = self._calculate_bisector(top_cluster_angles[0], top_cluster_angles[1])
                     
                     # 最適風上角度を考慮した風向の推定
                     wind_direction = (bisector + 180 - optimal_upwind_angle) % 360
-                    
+                                
                     # 信頼度はクラスタのサイズと角度差に基づく
                     angle_confidence = 1.0 - abs(angle_diff - 90) / 90  # 90度で最大
                     
@@ -1174,15 +1198,19 @@ class WindEstimator:
         """
         複数推定結果から重み付けされた最終風向を算出
         
+        各推定手法からの風向（風が吹いてくる方向）と信頼度の情報を元に、
+        重み付き平均による合意形成を行い、最終的な風向を決定します。
+        
         Parameters:
         -----------
         results_dict : Dict[str, Tuple[float, float]]
             推定手法: (風向, 信頼度) の辞書
+            風向は「風が吹いてくる方向」の角度（度、0-360）
             
         Returns:
         --------
         float
-            合意形成された風向（度）
+            合意形成された風向（度、0-360、風が吹いてくる方向）
         """
         if not results_dict:
             return 0.0
@@ -1199,7 +1227,7 @@ class WindEstimator:
         if not directions:
             return 0.0
         
-        # 正弦・余弦成分の重み付き平均
+        # 正弦・余弦成分の重み付き平均（角度の循環性を考慮）
         sin_sum = 0
         cos_sum = 0
         weight_sum = 0
@@ -1291,24 +1319,33 @@ class WindEstimator:
         """
         方向転換を検出し、風向を基にタックとジャイブを区別する
         
+        艇のGPSデータから方向転換（マニューバー）を検出し、風向を基に
+        タック、ジャイブ、ベアアウェイ、ヘッドアップに分類します。
+        タックは風上走行中に風向をまたいで方向転換する操作、ジャイブは
+        風下走行中に風向をまたいで方向転換する操作です。
+        
         Parameters:
         -----------
         df : pd.DataFrame
             GPSデータ
         wind_direction : float
-            推定風向（度）
+            推定風向（度、0-360、風が吹いてくる方向）
         min_angle_change : float
             方向転換と判定する最小角度変化
         window_size : int
             移動ウィンドウサイズ
-            
+                
         Returns:
         --------
         pd.DataFrame
-            検出された方向転換とその分類（タック/ジャイブ）
+            検出された方向転換とその分類（タック/ジャイブ/ベアアウェイ/ヘッドアップ）
         """
         if df is None or len(df) < window_size * 2:
             return pd.DataFrame()  # 十分なデータがない場合は空のデータフレームを返す
+        
+        # 風向のバリデーション
+        if wind_direction is None or not (0 <= wind_direction < 360):
+            wind_direction = 0.0  # デフォルト値を設定
         
         # 方位角の変化を計算
         df_with_changes = self._calculate_bearing_change(df)
@@ -1361,25 +1398,34 @@ class WindEstimator:
         """
         方向転換のタイプを風向に基づいて分類
         
+        セーリングにおけるマニューバー（方向転換）の種類は、艇が風向に対して
+        どのように位置を変えたかによって決まります。このメソッドは、転換前後の
+        艇の方位と風向から、タック、ジャイブ、ベアアウェイ、ヘッドアップの
+        いずれかに分類します。
+        
         Parameters:
         -----------
         before_bearing : float
-            転換前の艇の方位
+            転換前の艇の方位（度、0-360）
         after_bearing : float
-            転換後の艇の方位
+            転換後の艇の方位（度、0-360）
         wind_direction : float
-            風向（風が吹いてくる方向）
+            風向（度、0-360、風が吹いてくる方向）
             
         Returns:
         --------
         str
-            'tack', 'jibe', 'bear_away', 'head_up' いずれかのタイプ
+            'tack': 風上走行中に風向をまたいで方向転換する
+            'jibe': 風下走行中に風向をまたいで方向転換する
+            'bear_away': 風上から風下へと艇を落とす
+            'head_up': 風下から風上へと艇を上げる
         """
         # 風向に対する相対角度を計算
         rel_before = (before_bearing - wind_direction + 360) % 360
         rel_after = (after_bearing - wind_direction + 360) % 360
         
         # 風上側か風下側か判定
+        # 相対角度が0-90度または270-360度の範囲にある場合、風上側と判断
         is_upwind_before = 0 <= rel_before <= 90 or 270 <= rel_before <= 360
         is_upwind_after = 0 <= rel_after <= 90 or 270 <= rel_after <= 360
         
