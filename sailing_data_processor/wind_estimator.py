@@ -322,48 +322,47 @@ class WindEstimator:
         Tuple[float, float]
             (推定風向（度、0-360の範囲、風が吹いてくる方向）, 信頼度スコア(0-1の範囲))
         """
-    
         if df is None or len(df) < 10:  # 最低限のデータポイント要件
-                return 0.0, 0.0
-            
-            # データ品質の評価
-            data_quality = self._evaluate_data_quality(df)
-            
-            # 方位の分布範囲を評価
-            bearing_range = self._evaluate_bearing_range(df)
-            
-            # 結果を格納する辞書
-            estimates = {}
-            
-            # 1. 速度パターン分析による推定
-            direction_speed, confidence_speed = self._estimate_from_speed_patterns(df)
-            estimates['speed_patterns'] = (direction_speed, confidence_speed)
-            
-            # 2. ポーラーデータを用いた推定（データが利用可能な場合）
-            direction_polar, confidence_polar = self._estimate_using_polar(df, boat_type)
-            if confidence_polar > 0:
-                estimates['polar_data'] = (direction_polar, confidence_polar)
-            
-            # 3. 最適VMG角度に基づく推定
-            direction_vmg, confidence_vmg = self._estimate_from_optimal_vmg(df, boat_type)
-            estimates['optimal_vmg'] = (direction_vmg, confidence_vmg)
-            
-            # 各推定結果の信頼度に応じた重み付け平均を計算
-            if estimates:
-                final_direction = self._weighted_angle_consensus(estimates)
-                
-                # 最終的な信頼度は各推定法の最大信頼度と平均信頼度の加重平均
-                max_confidence = max([conf for _, conf in estimates.values()])
-                avg_confidence = sum([conf for _, conf in estimates.values()]) / len(estimates)
-                final_confidence = 0.7 * max_confidence + 0.3 * avg_confidence
-                
-                # データ品質による信頼度の調整
-                final_confidence = final_confidence * data_quality
-                
-                return final_direction, final_confidence
-            
-            # 推定失敗
             return 0.0, 0.0
+            
+        # データ品質の評価
+        data_quality = self._evaluate_data_quality(df)
+        
+        # 方位の分布範囲を評価
+        bearing_range = self._evaluate_bearing_range(df)
+        
+        # 結果を格納する辞書
+        estimates = {}
+        
+        # 1. 速度パターン分析による推定
+        direction_speed, confidence_speed = self._estimate_from_speed_patterns(df)
+        estimates['speed_patterns'] = (direction_speed, confidence_speed)
+        
+        # 2. ポーラーデータを用いた推定（データが利用可能な場合）
+        direction_polar, confidence_polar = self._estimate_using_polar(df, boat_type)
+        if confidence_polar > 0:
+            estimates['polar_data'] = (direction_polar, confidence_polar)
+        
+        # 3. 最適VMG角度に基づく推定
+        direction_vmg, confidence_vmg = self._estimate_from_optimal_vmg(df, boat_type)
+        estimates['optimal_vmg'] = (direction_vmg, confidence_vmg)
+        
+        # 各推定結果の信頼度に応じた重み付け平均を計算
+        if estimates:
+            final_direction = self._weighted_angle_consensus(estimates)
+            
+            # 最終的な信頼度は各推定法の最大信頼度と平均信頼度の加重平均
+            max_confidence = max([conf for _, conf in estimates.values()])
+            avg_confidence = sum([conf for _, conf in estimates.values()]) / len(estimates)
+            final_confidence = 0.7 * max_confidence + 0.3 * avg_confidence
+            
+            # データ品質による信頼度の調整
+            final_confidence = final_confidence * data_quality
+            
+            return final_direction, final_confidence
+        
+        # 推定失敗
+        return 0.0, 0.0
 
 
 
