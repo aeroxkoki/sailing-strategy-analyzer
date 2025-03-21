@@ -323,7 +323,7 @@ class WindEstimator:
             (推定風向（度、0-360の範囲、風が吹いてくる方向）, 信頼度スコア(0-1の範囲))
         """
     
-            if df is None or len(df) < 10:  # 最低限のデータポイント要件
+        if df is None or len(df) < 10:  # 最低限のデータポイント要件
                 return 0.0, 0.0
             
             # データ品質の評価
