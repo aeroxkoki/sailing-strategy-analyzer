@@ -441,9 +441,9 @@ class WindEstimator:
         
         return min(180.0, bearing_range)  # 最大180度に制限
 
-    def _estimate_from_speed_patterns(self, df: pd.DataFrame) -> Tuple[float, float]:
+    def _estimate_from_speed_patterns(self, df):
         """
-        速度パターンに基づいて風向を推定
+        速度パターン分析による風向推定
         
         Parameters:
         -----------
@@ -455,83 +455,114 @@ class WindEstimator:
         Tuple[float, float]
             (推定風向, 信頼度)
         """
-        # 必要なカラムがあるか確認
-        if 'bearing' not in df.columns or 'speed' not in df.columns:
-            return 0.0, 0.3  # 低信頼度の推定値
-            
-        # データを有効なエントリだけに絞り込み
-        valid_mask = df['bearing'].notna() & df['speed'].notna()
-        if not valid_mask.any():
-            return 0.0, 0.3  # 有効なデータがない場合
+        if df is None or len(df) < 10:
+            return 0.0, 0.1  # データが少ない場合、低信頼度の風向を返す
         
-        valid_indices = np.where(valid_mask)[0]
+        # 速度変化に基づく風向推定
+        df_speed = df.copy()
+        
+        # 移動平均で速度をスムーズ化
+        if len(df_speed) > 5:
+            df_speed['smooth_speed'] = df_speed['speed'].rolling(window=5, center=True).mean()
+            df_speed['smooth_speed'].fillna(df_speed['speed'], inplace=True)
+        else:
+            df_speed['smooth_speed'] = df_speed['speed']
+        
+        # 速度の変化に基づいて有効なインデックスを選択
+        speed_threshold = df_speed['smooth_speed'].max() * 0.7
+        valid_mask = df_speed['smooth_speed'] > speed_threshold
+        
+        # 修正ポイント - valid_indicesが空でないことを確認
+        valid_indices = df_speed.index[valid_mask].tolist()
+        
+        if not valid_indices:  # リストが空の場合のチェックを追加
+            return 0.0, 0.1  # データが不十分な場合のデフォルト値
+        
+        # インデックスが整数値だけを含むことを確保
+        valid_indices = [int(i) for i in valid_indices if pd.notna(i)]
+        
+        # 再度空のリストチェック
+        if not valid_indices:
+            return 0.0, 0.1
+    
+        # 有効なインデックスがあるデータのみを使用
         valid_df = df.iloc[valid_indices].copy()
         
-        # 方位角を18度区切りの20ビンに分割（0-360度）
-        bin_size = 18  # 度
-        bins = np.arange(0, 361, bin_size)
+        # 方位角の分析
+        bearings = valid_df['bearing'].tolist()
         
-        # 各方位ビンの平均速度を計算
-        bin_speeds = []
-        bin_centers = []
-        bin_counts = []
-        
-        for i in range(len(bins)-1):
-            # ビンの下限と上限
-            low = bins[i]
-            high = bins[i+1]
+        # 風向グループを特定
+        if len(bearings) >= 10:
+            # 方位角を円周上に変換
+            X = np.column_stack([
+                np.cos(np.radians(bearings)),
+                np.sin(np.radians(bearings))
+            ])
             
-            # このビンに含まれる方位のインデックスを取得
-            if i == len(bins)-2:  # 最後のビン（360度含む）
-                bin_mask = (valid_df['bearing'] >= low) & (valid_df['bearing'] <= high)
-            else:
-                bin_mask = (valid_df['bearing'] >= low) & (valid_df['bearing'] < high)
+            # K-meansクラスタリングで主要な方位グループを分類
+            n_clusters = min(3, len(X) // 3)  # データ量に応じてクラスタ数を調整
+            if n_clusters < 1:
+                n_clusters = 1
+                
+            kmeans = KMeans(n_clusters=n_clusters, random_state=0, n_init=10).fit(X)
+            clusters = kmeans.labels_
             
-            # 安全なフィルタリング - .iloc[]を使用
-            bin_indices = np.where(bin_mask)[0]
-            if len(bin_indices) > 0:
-                bin_data = valid_df.iloc[bin_indices]
-                bin_speeds.append(bin_data['speed'].mean())
-                bin_centers.append((low + high) / 2)
-                bin_counts.append(len(bin_data))
-            else:
-                # データがない場合はスキップ
-                continue
-        
-        if not bin_speeds:
-            return 0.0, 0.3  # ビンごとの集計に失敗
-        
-        # 最も遅いビンと最も速いビンを見つける
-        min_speed_idx = np.argmin(bin_speeds)
-        max_speed_idx = np.argmax(bin_speeds)
-        
-        min_speed = bin_speeds[min_speed_idx]
-        max_speed = bin_speeds[max_speed_idx]
-        
-        # 速度変動が小さすぎる場合（一定の速度）
-        speed_range = max_speed - min_speed
-        if speed_range < 0.5 or max_speed < 1.0:
-            return 0.0, 0.3  # 速度パターンが不明瞭
-        
-        # 最も遅い方向は風上、最も速い方向は風下と仮定
-        upwind_direction = bin_centers[min_speed_idx]
-        downwind_direction = bin_centers[max_speed_idx]
-        
-        # 風向の計算（風上と風下の方向に基づく）
-        wind_direction = (upwind_direction + 180) % 360
-        
-        # 風下方向と理論上の風下方向（風上の反対）の差
-        expected_downwind = (upwind_direction + 180) % 360
-        downwind_diff = abs(((downwind_direction - expected_downwind) + 180) % 360 - 180)
-        
-        # 信頼度の計算（風上風下関係と速度差の明確さに基づく）
-        clarity = min(1.0, speed_range / 3.0)  # 速度差の明確さ（0-1）
-        # 風上風下の方向が反対（180度差）に近いほど高信頼度
-        direction_agreement = max(0, 1.0 - downwind_diff / 90.0)
-        
-        confidence = 0.4 + (clarity * 0.3) + (direction_agreement * 0.3)
-        
-        return wind_direction, confidence
+            # クラスタごとの統計
+            cluster_stats = []
+            for i in range(n_clusters):
+                cluster_mask = clusters == i
+                if np.any(cluster_mask):
+                    cluster_bearings = np.array(bearings)[cluster_mask]
+                    cluster_speeds = valid_df['speed'].iloc[np.where(cluster_mask)[0]].values
+                    
+                    # クラスタの統計情報
+                    cluster_stats.append({
+                        'mean_bearing': self._calculate_mean_angle(cluster_bearings),
+                        'std_bearing': np.std(cluster_bearings),
+                        'mean_speed': np.mean(cluster_speeds),
+                        'count': np.sum(cluster_mask),
+                        'bearings': cluster_bearings
+                    })
+            
+            # クラスタ統計があれば処理
+            if cluster_stats:
+                # 速度の最大・最小クラスタを特定
+                max_speed_cluster = max(cluster_stats, key=lambda x: x['mean_speed'])
+                min_speed_cluster = min(cluster_stats, key=lambda x: x['mean_speed'])
+                
+                # 風上風下の推定
+                if max_speed_cluster['mean_speed'] > min_speed_cluster['mean_speed'] * 1.2:
+                    # 十分な速度差がある場合
+                    # 速い方が風下、遅い方が風上と推定
+                    downwind_bearing = max_speed_cluster['mean_bearing']
+                    upwind_bearing = min_speed_cluster['mean_bearing']
+                    
+                    # 修正: 風向 = 風上の方位（風が吹いてくる方向）
+                    wind_direction = upwind_bearing
+                    
+                    # 風上風下が互いに反対方向に近いほど信頼度が高い
+                    angle_diff = abs(((downwind_bearing - upwind_bearing + 180) % 360) - 180)
+                    confidence = max(0.3, min(0.9, angle_diff / 180.0))
+                    
+                    return wind_direction, confidence
+                
+            # 単一クラスタまたは速度差が小さい場合    
+            # 速度に基づく簡易推定
+            fastest_indices = valid_df['speed'].nlargest(min(5, len(valid_df))).index
+            fastest_bearings = valid_df.loc[fastest_indices, 'bearing'].values
+            
+            # 最速点の方位から風向推定（風が吹いてくる方向=艇の進行方向+180度）
+            fastest_mean_bearing = self._calculate_mean_angle(fastest_bearings)
+            wind_direction = (fastest_mean_bearing + 180) % 360  # 修正: 船の進行方向の反対が風向
+            
+            # 低い信頼度
+            return wind_direction, 0.4
+            
+        else:
+            # データが少ない場合、単純に平均風向と低信頼度を返す
+            mean_bearing = self._calculate_mean_angle(bearings)
+            wind_direction = (mean_bearing + 180) % 360  # 修正: 船の進行方向の反対が風向
+            return wind_direction, 0.3
     
     def _get_polar_data(self, boat_type: str) -> Optional[pd.DataFrame]:
         """
