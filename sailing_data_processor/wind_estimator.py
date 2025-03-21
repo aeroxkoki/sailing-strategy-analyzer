@@ -453,7 +453,7 @@ class WindEstimator:
         Returns:
         --------
         Tuple[float, float]
-            (推定風向, 信頼度)
+            (推定風向（風が吹いてくる方向）, 信頼度)
         """
         if df is None or len(df) < 10:
             return 0.0, 0.1  # データが少ない場合、低信頼度の風向を返す
@@ -472,7 +472,7 @@ class WindEstimator:
         speed_threshold = df_speed['smooth_speed'].max() * 0.7
         valid_mask = df_speed['smooth_speed'] > speed_threshold
         
-        # 修正ポイント - valid_indicesが空でないことを確認
+        # 修正: valid_indicesが空でないことを確認
         valid_indices = df_speed.index[valid_mask].tolist()
         
         if not valid_indices:  # リストが空の場合のチェックを追加
@@ -551,12 +551,18 @@ class WindEstimator:
             fastest_indices = valid_df['speed'].nlargest(min(5, len(valid_df))).index
             fastest_bearings = valid_df.loc[fastest_indices, 'bearing'].values
             
-            # 最速点の方位から風向推定（風が吹いてくる方向=艇の進行方向+180度）
+            # 修正: 最速点の方位から風向推定（風が吹いてくる方向=艇の進行方向+180度）
             fastest_mean_bearing = self._calculate_mean_angle(fastest_bearings)
-            wind_direction = (fastest_mean_bearing + 180) % 360  # 修正: 船の進行方向の反対が風向
+            wind_direction = (fastest_mean_bearing + 180) % 360  # 船の進行方向の反対が風向
             
             # 低い信頼度
             return wind_direction, 0.4
+        
+    else:
+        # データが少ない場合、単純に平均風向と低信頼度を返す
+        mean_bearing = self._calculate_mean_angle(bearings)
+        wind_direction = (mean_bearing + 180) % 360  # 船の進行方向の反対が風向
+        return wind_direction, 0.3
             
         else:
             # データが少ない場合、単純に平均風向と低信頼度を返す
