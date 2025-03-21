@@ -55,12 +55,12 @@ class WindEstimator:
             # 例：艇が30度を向いて風上走行している場合、風向は約165度
             return (boat_bearing + 180 - vmg_angle) % 360
         elif sailing_state == 'downwind':
-            # 風下走行時：艇の進行方向 = 風向（VMG角度は考慮しない）
-            # 例：艇が180度を向いて風下走行している場合、風向は180度
-            return boat_bearing
+            # 修正: 風下走行時も風向は風が吹いてくる方向（艇の進行方向と逆）
+            # 例：艇が180度を向いて風下走行している場合、風向は0度
+            return (boat_bearing + 180) % 360
         else:  # reaching
-            # リーチング時：中間的な計算
-            # 艇の進行方向と風向の角度差は、90度が基本
+            # リーチング時：艇の進行方向と風向の角度差は、90度が基本
+            # 例：艇が90度を向いてリーチングしている場合、風向は約180度
             return (boat_bearing + 90) % 360
 
     def _determine_sailing_state(self, bearings: List[float], speeds: List[float]) -> str:
