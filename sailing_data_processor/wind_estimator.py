@@ -687,13 +687,7 @@ class WindEstimator:
             
             # 低い信頼度
             return wind_direction, 0.4
-        
-    else:
-        # データが少ない場合、単純に平均風向と低信頼度を返す
-        mean_bearing = self._calculate_mean_angle(bearings)
-        wind_direction = (mean_bearing + 180) % 360  # 船の進行方向の反対が風向
-        return wind_direction, 0.3
-            
+                    
         else:
             # データが少ない場合、単純に平均風向と低信頼度を返す
             mean_bearing = self._calculate_mean_angle(bearings)
