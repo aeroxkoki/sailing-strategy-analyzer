@@ -340,6 +340,8 @@ class WindEstimator:
         # 推定失敗
         return 0.0, 0.0
 
+
+
     def _evaluate_data_quality(self, df: pd.DataFrame) -> float:
         """
         データの品質を評価（ノイズレベル、変動性、バランス）
@@ -440,6 +442,112 @@ class WindEstimator:
         bearing_range = np.percentile(angle_diffs, 95) * 2  # 片側→両側の範囲
         
         return min(180.0, bearing_range)  # 最大180度に制限
+
+    def _estimate_from_tack_patterns(self, df):
+        """
+        タックパターン分析による風向推定
+        
+        Parameters:
+        -----------
+        df : pd.DataFrame
+            GPSデータ
+            
+        Returns:
+        --------
+        Tuple[float, float]
+            (推定風向（風が吹いてくる方向）, 信頼度)
+        """
+        if df is None or len(df) < 10:
+            return 0.0, 0.1  # データが少ない場合、低信頼度の風向を返す
+        
+        # 方位変化を計算し、タックを検出
+        df_with_change = self._calculate_bearing_change(df)
+        min_tack_angle = 45.0  # 最小タック角度
+        tack_points = self._detect_tacks_improved(df_with_change, min_tack_angle)
+        
+        if tack_points is None or len(tack_points) < 2:
+            # タックが十分に検出されない場合
+            return 0.0, 0.2
+        
+        # タック前後の方位を収集
+        tack_pairs = []  # タック前後のペアを保存
+        
+        for i, tack in tack_points.iterrows():
+            tack_idx = tack.name if hasattr(tack, 'name') else i
+            
+            # タックの前後のインデックスを計算
+            before_idx = max(0, tack_idx - 3)
+            after_idx = min(len(df) - 1, tack_idx + 3)
+            
+            # タック前後の方位を取得
+            if before_idx != tack_idx and after_idx != tack_idx:
+                bearing_before = df.iloc[before_idx]['bearing']
+                bearing_after = df.iloc[after_idx]['bearing']
+                
+                # 方位差を計算して実際にタックかどうか検証
+                bearing_diff = abs(((bearing_after - bearing_before + 180) % 360) - 180)
+                
+                # タックは通常80-100度程度の方位変化を伴う
+                if 70 <= bearing_diff <= 110:
+                    tack_pairs.append((bearing_before, bearing_after))
+        
+        # 有効なタックペアから風向を推定
+        wind_directions = []
+        
+        for bearing_before, bearing_after in tack_pairs:
+            # タック前後の方位から風向を推定
+            # 両方位の二等分線を計算（風向または風向+180度）
+            bisector = self._calculate_bisector(bearing_before, bearing_after)
+            
+            # タックは風上での操作なので、二等分線は風向軸を示す
+            # 実際の風向かその逆かを決定する必要がある
+            
+            # 最も可能性が高いのは、二等分線そのものが風向
+            # （クローズホールドで風に向かって進むため）
+            wind_directions.append(bisector)
+        
+        if wind_directions:
+            # 複数の推定値の平均
+            wind_direction = self._calculate_mean_angle(wind_directions)
+            
+            # 信頼度は検出タック数に依存
+            confidence = min(0.8, 0.4 + len(wind_directions) * 0.1)
+            
+            return wind_direction, confidence
+        
+        # 有効なタックが検出されない場合
+        return 0.0, 0.2
+    
+    def _calculate_bisector(self, angle1, angle2):
+        """
+        2つの角度の二等分線を計算
+        
+        Parameters:
+        -----------
+        angle1, angle2 : float
+            二等分する2つの角度（度）
+            
+        Returns:
+        --------
+        float
+            二等分線の角度（0-360度）
+        """
+        # sin/cosコンポーネントに変換
+        sin1, cos1 = np.sin(np.radians(angle1)), np.cos(np.radians(angle1))
+        sin2, cos2 = np.sin(np.radians(angle2)), np.cos(np.radians(angle2))
+        
+        # ベクトル和を計算
+        sin_sum = sin1 + sin2
+        cos_sum = cos1 + cos2
+        
+        # 合成角度を計算
+        if sin_sum == 0 and cos_sum == 0:
+            # 完全に反対方向の場合、任意の二等分線を返す
+            return (angle1 + 90) % 360
+        
+        bisector = np.degrees(np.arctan2(sin_sum, cos_sum)) % 360
+        
+        return bisector
 
     def _estimate_from_speed_patterns(self, df):
         """
